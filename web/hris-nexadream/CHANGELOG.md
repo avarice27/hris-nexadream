@@ -1,0 +1,51 @@
+# Changelog
+
+## 0.1.0 (Draft)
+
+- Project skeleton: Nuxt 4 + Nuxt UI v4, Prisma 7 (pg adapter), Vercel preset, design tokens (indigo/teal, light + dark).
+- Full platform database schema and first migration; idempotent seed for permissions, staff roles, admin menus, settings, email/notification templates, the four plans (Free, Growth, Business, Enterprise), the payment gateway row, legal pages, FAQ, the first superadmin and a demo company.
+- Sign-in for company users (email or phone + password) and back-office staff, with per-identifier and per-IP rate limits and an audit trail of successful and failed sign-ins.
+- Company owner registration that creates the company, primary office, 14-day Business trial (one per email) and signs the owner in.
+- Forgot/reset password for both audiences (single-use, 2-hour links) and change password.
+- Back-office staff invitation acceptance page.
+- Role-based access for companies: Pemilik, Admin HR, Atasan/Manajer, Karyawan; employees are confined to the self-service area.
+- Back-office settings screen (company identity, SMTP with test email, billing, privacy, app and HR defaults); secrets are encrypted and never shown again.
+- Branded HTML emails with a plain-text alternative; editable email templates with live preview and notification templates, including HRIS templates (employee invitation, leave, payslip, attendance, contracts).
+- In-app notifications with a bell in every console, a full notifications page for companies, employees and staff, and read/unread tracking.
+- New companies get welcome and trial notifications; staff are notified about every new company.
+- Company onboarding wizard: company profile, NPWP, first office and its timezone, working days and hours, annual leave and data-processing consent.
+- Company settings: profile and logo, masked NPWP, default work calendar, editable leave policy, data export and account deletion request.
+- Team management: invite Admin HR and managers, seat usage, resend/revoke invitations, change roles, limit members to offices, deactivate and reactivate; invitation acceptance page.
+- Offices: add, edit, deactivate, delete, choose the main office, optional geofence; office switcher in the console.
+- Profile page with photo upload; uploaded photos are resized in the browser and stripped of location data.
+- Plan limits are enforced for offices, team seats and storage.
+- Public account deletion information page.
+- Paid features are shown with a lock in the menu; opening one, or hitting a plan limit, shows an upgrade dialog with the plans that include it.
+- Trial banner with days remaining (and payment grace deadline) for owners, plus an upgrade button in the menu.
+- Back-office plan editor: prices, trial length, visibility, every limit (with "unlimited") and every feature; changes apply to all companies on the plan.
+- All validation messages are now in Bahasa Indonesia, including generic ones.
+- Subscription billing through the Nexadream Payment Hub: choose a plan monthly or yearly, pay on the hosted page, see pending payments and payment history, stop or resume a subscription.
+- Trials and paid periods end automatically: a missed renewal gives a grace period with a reminder, then the company moves to Free; extra offices and team logins are paused (never deleted) and the owner chooses which offices stay active.
+- Back-office: payment gateway settings (secrets masked), payments, subscriptions, and a payment callback log with replay.
+- Fixed: editing one field of a plan in the back-office no longer resets its display order, visibility or active state.
+- New public website: features, pricing that always matches the plans (monthly or yearly, with the yearly saving), frequently asked questions, and a contact form.
+- Privacy policy, terms, payment policy and a getting-started guide, editable in the back-office; the privacy policy always shows the current deletion and retention commitments.
+- Search engines: sitemap, robots rules, page descriptions and structured data for the product, prices and FAQ.
+- Footer shows social media links and the Google Play badge only when they are set in the back-office.
+- HR modules: employees (profile, employment history, private data encrypted and masked, family, salary history, import from Excel/CSV and export), departments, positions and holiday calendar.
+- Attendance: clock in/out from the phone with optional office geofence and selfie, office time zones (WIB/WITA/WIT), daily attendance board, corrections with approval, automatic closing of forgotten clock-outs.
+- Shifts and a weekly schedule; leave with balances, half days, attachments, approvals, cancellations and a team calendar; overtime and reimbursement requests.
+- One approval inbox for managers and HR; requests follow the direct manager, with optional multi-step flows.
+- Payroll: PPh 21 (TER), BPJS, overtime pay, THR and unpaid leave; runs calculated in steps, approved, recorded as paid or voided; printable payslips for employees; summary and bank-transfer exports.
+- Document vault with expiry reminders, basic performance reviews, HR reports (headcount, attendance, leave, payroll) and a new dashboard.
+- Employee self-service: home with clock-in, attendance history, leave, requests, payslips, documents, performance and profile.
+- Public REST API v1 with company API keys, interactive documentation at /docs/api and an OpenAPI file.
+- Back-office: statutory reference data (tax and BPJS rates, national holidays), API keys, scheduled announcements and a production-readiness page.
+- Data retention: deleted companies are purged in two stages and former employees are anonymised after the retention period.
+- Sign-in, password reset, registration, contact and invitation limits now hold across all servers.
+- Back-office dashboard and revenue reports (MRR, new paid, renewals, churn, conversion) with a chart and data table.
+- Company management for staff: search and filter, detail with usage against plan limits, suspend and reinstate, plan override with a note, and deletion.
+- Support sessions ("masuk sebagai"): staff can open a company's console as its owner or a specific login, with a mandatory reason, a 30-minute limit, a visible banner and full audit trail; payments, data export and sensitive employee data stay locked.
+- Staff accounts and invitations, roles with a permission checklist, the permission catalog, a sidebar menu editor, all company logins, and a searchable activity log.
+- Content: page editor with rich text, FAQ editor, contact-form inbox, and public pages at /page/….
+- Management console shell, mobile-first employee self-service shell, and back-office shell with a database-driven, permission-filtered sidebar.

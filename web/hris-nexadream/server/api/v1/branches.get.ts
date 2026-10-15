@@ -1,0 +1,1 @@
+export default defineApiV1Handler(async event => ok((await listBranches(event)).items.map(b => ({ id: b.id, name: b.name, code: b.code, timezone: b.timezone, isActive: b.isActive, isPrimary: b.isPrimary }))), { apiKey: true })

@@ -1,0 +1,1637 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: no url here — prisma.config.ts (CLI) and the pg adapter (runtime).
+}
+
+// ---------------------------------------------------------------------------
+// Platform RBAC (back-office staff — /admin)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  phone        String?
+  passwordHash String
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  /// Last authenticated request; written at most once per 15 min per user.
+  lastSeenAt   DateTime?
+  roleId       String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  role           Role            @relation(fields: [roleId], references: [id])
+  passwordResets PasswordReset[]
+  invitations    Invitation[]    @relation("InvitationInvitedBy")
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+
+  @@index([roleId])
+  @@index([isActive])
+  @@map("users")
+}
+
+model Role {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  description  String?
+  isSuperAdmin Boolean  @default(false) // gates impersonation + destructive actions
+  isSystem     Boolean  @default(false) // seeded; not deletable
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+  invitations Invitation[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique // dotted, English: 'tenants.write'
+  group       String
+  description String // product language, shown in /admin/roles
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@index([group])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+/// Self-referential sidebar tree for /admin. `parentId == null && path == null`
+/// marks a section header. Max depth 3 (section → item → child item).
+model Menu {
+  id            String   @id // deterministic: menu-{slug}
+  parentId      String?
+  label         String // product language — rendered
+  slug          String   @unique // English
+  path          String?
+  icon          String?
+  permissionKey String?
+  order         Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  parent   Menu?  @relation("MenuTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Menu[] @relation("MenuTree")
+
+  @@index([parentId])
+  @@index([order])
+  @@map("menus")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy (the customer business — /app)
+// ---------------------------------------------------------------------------
+
+enum TenantStatus {
+  active
+  suspended
+  deleted
+}
+
+model Tenant {
+  id                    String       @id @default(cuid())
+  name                  String
+  slug                  String       @unique
+  phone                 String? // null until onboarding for OAuth signups
+  email                 String?
+  /// Display timezone for screens with no branch in scope.
+  timezone              String       @default("Asia/Jakarta")
+  logoUrl               String?
+  status                TenantStatus @default(active)
+  suspendedAt           DateTime?
+  suspendedReason       String?
+  /// Personal-data consent captured at signup/onboarding (UU PDP / GDPR-like).
+  dataConsentAcceptedAt DateTime?
+  /// Null = onboarding not finished → the console blocks on /app/onboarding.
+  onboardingCompletedAt DateTime?
+  /// Null after a downgrade put the tenant over its branch cap → owner must pick.
+  downgradeResolvedAt   DateTime?
+  deletedAt             DateTime? // soft delete
+  deleteRequestedAt     DateTime? // owner asked for erasure
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  /// Legal entity name (PT/CV …) for payslips and reports.
+  legalName             String?
+  industry              String?
+  /// Company NPWP — AES-256-GCM ciphertext (D7), never returned raw.
+  npwp                  String?
+  /// Default work calendar from onboarding: { workingDays: number[0-6], startTime, endTime, breakMinutes }.
+  /// Seeds the first shift/work schedule when the attendance module lands (Phase 11).
+  workCalendar          Json?
+  /// Default leave policy from onboarding: [{ code, name, days, eligibleAfterMonths }].
+  /// Seeds LeaveType rows when the leave module lands (Phase 11).
+  leavePolicy           Json?
+  deleteRequestReason   String?
+  /// Tahap purge retensi: 1 = data operasional dihapus (catatan payroll/pajak disimpan), 2 = semua dihapus.
+  dataPurgeStage        Int          @default(0)
+  dataPurgedAt          DateTime?
+
+  memberships        TenantMembership[]
+  invitations        TenantInvitation[]
+  branches           Branch[]
+  subscription       Subscription?
+  subscriptionEvents SubscriptionEvent[]
+  payments           Payment[]
+  apiClients         ApiClient[]
+  trialClaim         TrialClaim?
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  storedFiles        StoredFile[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("tenants")
+}
+
+model TenantUser {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  phone           String?   @unique // normalized 62xxxxxxxxxx
+  passwordHash    String? // null = signs in only via external provider
+  avatarUrl       String?
+  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  lastSeenAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  memberships    TenantMembership[]
+  passwordResets PasswordReset[]
+  notifications  Notification[]
+  identities     TenantUserIdentity[]
+  authHandoffs   AuthHandoff[]
+  pushDevices    PushDevice[]
+
+  @@index([isActive])
+  @@map("tenant_users")
+}
+
+/// One row per external provider account. providerAccountId is the provider's
+/// stable subject id — never the email.
+model TenantUserIdentity {
+  id                String   @id @default(cuid())
+  tenantUserId      String
+  provider          String // 'google'
+  providerAccountId String
+  email             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenantUser TenantUser @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([tenantUserId])
+  @@map("tenant_user_identities")
+}
+
+/// Single-use, short-lived code carrying a proven identity from a server-side
+/// OAuth redirect back to the SPA. Only a SHA-256 hash is stored.
+model AuthHandoff {
+  id           String    @id @default(cuid())
+  tenantUserId String
+  tokenHash    String    @unique
+  isNew        Boolean   @default(false)
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  tenantUser TenantUser @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantUserId])
+  @@index([expiresAt])
+  @@map("auth_handoffs")
+}
+
+enum TenantRole {
+  owner // Pemilik: everything incl. billing, team, company deletion
+  hr_admin // Admin HR: full HR operations, no billing/ownership
+  manager // Atasan/Manajer: approvals + reports' attendance, no payroll/salary
+  employee // Karyawan: self-service only
+}
+
+model TenantMembership {
+  id           String     @id @default(cuid())
+  tenantId     String
+  tenantUserId String
+  role         TenantRole @default(owner)
+  isActive     Boolean    @default(true) // deactivated, never deleted
+  invitedById  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant     Tenant                   @relation(fields: [tenantId], references: [id])
+  tenantUser TenantUser               @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+  branches   TenantMembershipBranch[]
+
+  @@unique([tenantId, tenantUserId])
+  @@index([tenantUserId])
+  @@index([tenantId])
+  @@map("tenant_memberships")
+}
+
+/// Which branches a member may work in. NO ROWS MEANS EVERY BRANCH.
+model TenantMembershipBranch {
+  id           String   @id @default(cuid())
+  tenantId     String
+  membershipId String
+  branchId     String
+  createdAt    DateTime @default(now())
+
+  membership TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  branch     Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, branchId])
+  @@index([tenantId])
+  @@index([branchId])
+  @@map("tenant_membership_branches")
+}
+
+model TenantInvitation {
+  id          String     @id @default(cuid())
+  tenantId    String
+  email       String
+  name        String?
+  role        TenantRole @default(employee)
+  branchIds   Json? // empty/null = every branch
+  /// ESS invitations only: the Employee record the login will be linked to.
+  /// Plain column — platform tables never import domain tables.
+  employeeId  String?
+  tokenHash   String     @unique // SHA-256; raw token only in the email link
+  invitedById String?
+  expiresAt   DateTime // 7 days
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email]) // one live invitation per address
+  @@index([tenantId])
+  @@index([email])
+  @@map("tenant_invitations")
+}
+
+/// Optional multi-location module. Deactivated (not deleted) on downgrade.
+model Branch {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  code                 String?  @unique // short readable code, unique platform-wide
+  address              String?
+  phone                String?
+  timezone             String   @default("Asia/Jakarta")
+  isActive             Boolean  @default(true)
+  isPrimary            Boolean  @default(false)
+  /// Geofence centre for attendance (plan feature attendanceGeofence). Null = no geofence.
+  latitude             Decimal? @db.Decimal(9, 6)
+  longitude            Decimal? @db.Decimal(9, 6)
+  geofenceRadiusMeters Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant         Tenant                   @relation(fields: [tenantId], references: [id])
+  memberBranches TenantMembershipBranch[]
+  employees      Employee[]
+
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, createdAt])
+  @@map("branches")
+}
+
+/// One trial per normalized email address.
+model TrialClaim {
+  id              String   @id @default(cuid())
+  emailNormalized String   @unique
+  tenantId        String   @unique
+  createdAt       DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("trial_claims")
+}
+
+// ---------------------------------------------------------------------------
+// Plans, subscriptions & billing
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id           String   @id @default(cuid())
+  slug         String   @unique // 'free' | 'growth' | 'business' | 'enterprise' (editable)
+  name         String
+  description  String?
+  priceMonthly Decimal  @db.Decimal(14, 2)
+  priceYearly  Decimal  @db.Decimal(14, 2)
+  currency     String   @default("IDR")
+  /// Numeric caps keyed by LIMIT_KEYS. -1 = unlimited.
+  limits       Json
+  /// Boolean switches keyed by FEATURE_KEYS.
+  features     Json
+  trialDays    Int      @default(14)
+  isActive     Boolean  @default(true) // can be bought
+  isPublic     Boolean  @default(true) // shown on pricing/billing pages
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  cancelled
+  downgraded
+  suspended
+}
+
+enum BillingPeriod {
+  monthly
+  yearly
+}
+
+/// Current state only. History is SubscriptionEvent. ONLY
+/// transitionSubscription() (and the audited admin override) writes status.
+model Subscription {
+  id               String             @id @default(cuid())
+  tenantId         String             @unique
+  planId           String
+  status           SubscriptionStatus @default(trialing)
+  period           BillingPeriod      @default(monthly)
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  graceEndsAt      DateTime?
+  cancelledAt      DateTime?
+  downgradedAt     DateTime?
+  providerRef      String? // recurring mandate at the gateway, if supported
+  provider         String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  plan     Plan      @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  @@index([planId])
+  @@index([status])
+  @@index([trialEndsAt])
+  @@index([graceEndsAt])
+  @@map("subscriptions")
+}
+
+/// Append-only. Written in the same DB client/transaction as the change.
+model SubscriptionEvent {
+  id           String              @id @default(cuid())
+  tenantId     String
+  transition   String // SubscriptionTransition | 'signup' | 'admin_override'
+  fromStatus   SubscriptionStatus?
+  toStatus     SubscriptionStatus
+  fromPlanSlug String?
+  toPlanSlug   String
+  period       BillingPeriod
+  createdAt    DateTime            @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([tenantId, createdAt])
+  @@map("subscription_events")
+}
+
+model PaymentGateway {
+  id          String   @id @default(cuid())
+  provider    String   @unique // 'nexadream_hub' | …
+  label       String
+  isActive    Boolean  @default(false) // exactly one may be active
+  isSandbox   Boolean  @default(true)
+  serverKey   String? // AES-256-GCM ciphertext; for the hub: platform API key
+  clientKey   String? // encrypted
+  merchantId  String?
+  baseUrl     String? // hub host, e.g. https://nexadream.id
+  orderPrefix String? // prefix the hub issued to this platform
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("payment_gateways")
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  expired
+  refunded
+  cancelled
+  challenge
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  tenantId       String
+  subscriptionId String?
+  orderId        String        @unique // ours: {{LOCAL_ORDER_PREFIX}}-<base36 time>-<rand>
+  gatewayOrderId String?       @unique // what the gateway sees (hub: PREFIX-orderId)
+  provider       String
+  amount         Int // smallest currency unit — NEVER Float
+  currency       String        @default("IDR")
+  status         PaymentStatus @default(pending)
+  rawStatus      String? // provider's own word, for support
+  paymentType    String?
+  period         BillingPeriod @default(monthly)
+  planSlug       String?
+  redirectUrl    String? // hosted page — lets a pending charge be resumed
+  paidAt         DateTime?
+  expiresAt      DateTime?
+  raw            Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([tenantId, createdAt])
+  @@map("payments")
+}
+
+/// Every raw callback, stored before it is applied. dedupeKey makes provider
+/// retries no-ops; admin can replay.
+model PaymentWebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  dedupeKey   String    @unique // `${provider}:${sha256(driver.webhookDedupeSource(payload))}`
+  orderId     String?
+  payload     Json
+  headers     Json?
+  processedAt DateTime?
+  error       String?
+  replayCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([provider])
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("payment_webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Public API clients (plan feature `apiAccess`)
+// ---------------------------------------------------------------------------
+
+model ApiClient {
+  id         String    @id @default(cuid())
+  tenantId   String
+  name       String
+  keyHash    String    @unique // SHA-256 of the plaintext; plaintext shown once
+  keyPrefix  String // first 16 chars, for display/lookup
+  scopes     String[] // 'read' | 'write'
+  lastUsedAt DateTime?
+  isActive   Boolean   @default(true)
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([keyPrefix])
+  @@map("api_clients")
+}
+
+// ---------------------------------------------------------------------------
+// Auth support
+// ---------------------------------------------------------------------------
+
+enum AuthAudience {
+  tenant
+  platform
+}
+
+model PasswordReset {
+  id           String       @id @default(cuid())
+  audience     AuthAudience
+  userId       String?
+  tenantUserId String?
+  tokenHash    String       @unique // SHA-256; 2-hour TTL
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime     @default(now())
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantUser TenantUser? @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantUserId])
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+/// Back-office staff invitation (there is no public /admin registration).
+model Invitation {
+  id          String    @id @default(cuid())
+  email       String
+  name        String?
+  roleId      String
+  tokenHash   String    @unique
+  invitedById String?
+  expiresAt   DateTime // 7 days
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  role      Role  @relation(fields: [roleId], references: [id])
+  invitedBy User? @relation("InvitationInvitedBy", fields: [invitedById], references: [id])
+
+  @@index([email])
+  @@index([roleId])
+  @@map("invitations")
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  audience       AuthAudience
+  actorId        String? // FK only for platform users
+  actorName      String?
+  impersonatorId String? // set inside an impersonated session
+  tenantId       String?
+  action         String // English slug: 'auth.sign_in', 'tenant.suspend'
+  targetType     String?
+  targetId       String?
+  metadata       Json? // tenant actor id lives here as tenantUserId
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+
+  actor  User?   @relation(fields: [actorId], references: [id])
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@index([actorId])
+  @@index([tenantId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications & email
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id           String       @id @default(cuid())
+  audience     AuthAudience
+  userId       String? // platform recipient
+  tenantUserId String? // tenant recipient
+  tenantId     String?
+  templateKey  String?
+  title        String
+  body         String
+  actionUrl    String?
+  icon         String?
+  level        String       @default("info") // info | success | warning | error
+  readAt       DateTime?
+  createdAt    DateTime     @default(now())
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantUser TenantUser? @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+  tenant     Tenant?     @relation(fields: [tenantId], references: [id])
+
+  @@index([userId, readAt])
+  @@index([tenantUserId, readAt])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum PushPlatform {
+  android
+  web
+}
+
+model PushDevice {
+  id           String       @id @default(cuid())
+  tenantUserId String
+  tenantId     String? // plain column, not a relation
+  token        String       @unique // re-registering moves it to the latest user
+  platform     PushPlatform
+  appVersion   String?
+  lastSeenAt   DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  tenantUser TenantUser @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantUserId, tenantId])
+  @@map("push_devices")
+}
+
+enum ScheduledNotificationStatus {
+  scheduled
+  sending
+  sent
+  failed
+}
+
+/// Admin-queued broadcast push to the 'all' topic at a fixed slot.
+model ScheduledNotification {
+  id             String                      @id @default(cuid())
+  title          String
+  body           String
+  scheduledFor   DateTime
+  /// tenant_admins = pemilik & Admin HR · tenant_team = + atasan · all_tenant_users = semua login perusahaan
+  audience       String                      @default("tenant_admins")
+  actionUrl      String?
+  recipientCount Int                         @default(0)
+  status         ScheduledNotificationStatus @default(scheduled)
+  sentAt         DateTime?
+  error          String?
+  createdById    String?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([scheduledFor])
+  @@map("scheduled_notifications")
+}
+
+model EmailTemplate {
+  id          String   @id // deterministic
+  key         String   @unique // 'password_reset'
+  name        String // product language
+  subject     String
+  body        String // HTML with {{token}} placeholders
+  description String?
+  variables   Json // [{ token, label, sample }]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("email_templates")
+}
+
+model NotificationTemplate {
+  id          String   @id
+  key         String   @unique
+  name        String
+  title       String
+  body        String
+  actionLabel String?
+  actionUrl   String?
+  icon        String?
+  level       String   @default("info")
+  variables   Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("notification_templates")
+}
+
+// ---------------------------------------------------------------------------
+// Settings & CMS
+// ---------------------------------------------------------------------------
+
+model AppSetting {
+  key       String   @id
+  value     String?
+  group     String // company | smtp | billing | privacy | app | system
+  type      String   @default("string") // string|number|boolean|json|secret|text|select
+  label     String
+  isSecret  Boolean  @default(false) // encrypted at rest, masked on read
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([group])
+  @@map("app_settings")
+}
+
+model Page {
+  id              String   @id @default(cuid())
+  slug            String   @unique // privacy, terms, payment policy, help …
+  title           String
+  content         String // HTML from the rich-text editor
+  excerpt         String?
+  metaTitle       String?
+  metaDescription String?
+  isPublished     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("pages")
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String   @default("umum")
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+  @@map("faqs")
+}
+
+enum ContactMessageStatus {
+  new
+  read
+  replied
+  archived
+}
+
+model ContactMessage {
+  id        String               @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  message   String
+  status    ContactMessageStatus @default(new)
+  ip        String?
+  handledAt DateTime?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("contact_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Product analytics — counters, never a person
+// ---------------------------------------------------------------------------
+
+enum UsagePlatform {
+  web
+  android
+}
+
+enum UsageDevice {
+  phone
+  tablet
+  desktop
+}
+
+/// One row per day per platform per form factor. Unit = device-day.
+model UsageDaily {
+  dateKey   String // "YYYY-MM-DD" on the platform clock
+  platform  UsagePlatform
+  device    UsageDevice
+  count     Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@id([dateKey, platform, device])
+  @@map("usage_daily")
+}
+
+// ---------------------------------------------------------------------------
+// Stored files (uploads through the storage adapter)
+// ---------------------------------------------------------------------------
+
+enum StorageVisibility {
+  public // logos, avatars — served by public URL
+  private // employee documents — only via short-lived signed URLs
+}
+
+/// One row per uploaded object. Counts against the plan's storageMb for tenant files.
+/// The bucket path is generated server-side; the client filename never reaches it.
+model StoredFile {
+  id           String            @id @default(cuid())
+  tenantId     String? // null = platform file (staff avatar)
+  uploadedById String? // TenantUser or User id (see audience)
+  audience     AuthAudience
+  visibility   StorageVisibility @default(public)
+  purpose      String // 'company_logo' | 'avatar' | 'document' …
+  provider     String // storage driver that holds it
+  path         String            @unique
+  contentType  String
+  size         Int // bytes
+  originalName String? // display only; never used in the path
+  deletedAt    DateTime?
+  createdAt    DateTime          @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, deletedAt])
+  @@index([createdAt])
+  @@map("stored_files")
+}
+
+// ===========================================================================
+// HRIS DOMAIN (fase 11). Setiap baris membawa tenantId (kolom polos — tabel platform
+// tidak mengimpor tabel domain). Data sensitif (*Encrypted) memakai kunci 'hr' (D7).
+// Lihat saas-blueprint/18-domain-layer-guide.md dan tasks/DECISIONS.md D20.
+// ===========================================================================
+
+enum EmploymentType {
+  permanent // PKWTT
+  contract // PKWT
+  internship
+  daily // harian lepas
+  freelance
+}
+
+enum EmploymentStatus {
+  active
+  probation
+  on_leave
+  inactive
+  terminated
+}
+
+enum Gender {
+  male
+  female
+}
+
+enum RequestStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum ApprovalStepStatus {
+  pending
+  approved
+  rejected
+  skipped
+  cancelled
+}
+
+enum AttendanceStatus {
+  present
+  late
+  absent
+  leave
+  holiday
+  off
+}
+
+enum AttendanceSource {
+  self
+  admin
+  correction
+  auto_close
+  import
+}
+
+enum PayrollRunStatus {
+  draft
+  approved
+  paid_recorded
+  void
+}
+
+enum SalaryComponentKind {
+  earning
+  deduction
+}
+
+enum PerformanceCycleStatus {
+  draft
+  active
+  closed
+}
+
+enum PerformanceReviewStatus {
+  pending
+  self_submitted
+  completed
+}
+
+/// Pengaturan HR per perusahaan (sisi domain; tabel tenants tidak disentuh).
+model TenantHrSettings {
+  tenantId                   String   @id
+  /// { leave: ['manager','hr'], overtime: [...], reimbursement: [...], attendance_correction: [...] }
+  approvalChains             Json?
+  attendanceSelfieRequired   Boolean  @default(false)
+  attendanceGeofenceEnforced Boolean  @default(false)
+  /// Absen yang lupa ditutup ditutup otomatis setelah N jam dari jadwal pulang.
+  autoCloseAfterHours        Int      @default(6)
+  /// Risiko JKK BPJS Ketenagakerjaan (0,24%–1,74%).
+  bpjsJkkRatePercent         Decimal  @default(0.24) @db.Decimal(5, 2)
+  /// Bila true, payslip tampil ke karyawan begitu run disetujui; false = setelah tercatat dibayar.
+  payslipVisibleOnApproval   Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@map("tenant_hr_settings")
+}
+
+/// Penomoran kode yang dibaca manusia (CT-260115-0001). Dinaikkan atomik lewat SQL.
+model DocumentSequence {
+  tenantId  String
+  prefix    String
+  period    String
+  lastValue Int    @default(0)
+
+  @@id([tenantId, prefix, period])
+  @@map("document_sequences")
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  code      String?
+  parentId  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent    Department?  @relation("DepartmentTree", fields: [parentId], references: [id])
+  children  Department[] @relation("DepartmentTree")
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("departments")
+}
+
+model Position {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  level     Int?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("positions")
+}
+
+/// Hari libur perusahaan (nasional/cuti bersama/khusus). branchId null = semua kantor.
+model Holiday {
+  id                String   @id @default(cuid())
+  tenantId          String
+  date              DateTime @db.Date
+  name              String
+  isCollectiveLeave Boolean  @default(false) // cuti bersama: memotong cuti tahunan bila kebijakan begitu
+  branchId          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([tenantId, date])
+  @@map("holidays")
+}
+
+model Employee {
+  id                String           @id @default(cuid())
+  tenantId          String
+  branchId          String
+  employeeNumber    String
+  fullName          String
+  email             String?
+  phone             String?
+  gender            Gender?
+  birthPlace        String?
+  birthDate         DateTime?        @db.Date
+  religion          String?
+  maritalStatus     String? // single | married | divorced | widowed
+  /// PTKP: TK0..TK3, K0..K3 (menentukan kategori TER PPh 21).
+  ptkpStatus        String           @default("TK0")
+  address           String?
+  photoUrl          String?
+  joinDate          DateTime         @db.Date
+  probationEndDate  DateTime?        @db.Date
+  contractEndDate   DateTime?        @db.Date
+  endDate           DateTime?        @db.Date
+  terminationReason String?
+  employmentType    EmploymentType   @default(permanent)
+  status            EmploymentStatus @default(active)
+  departmentId      String?
+  positionId        String?
+  managerId         String?
+  /// Shift bawaan bila tidak ada jadwal harian.
+  shiftId           String?
+  /// Login ESS yang terhubung (0..1).
+  tenantUserId      String?
+
+  // Data pribadi terenkripsi (D7) — tidak pernah dipilih untuk daftar.
+  nikEncrypted                       String?
+  npwpEncrypted                      String?
+  bpjsKesehatanNumberEncrypted       String?
+  bpjsKetenagakerjaanNumberEncrypted String?
+  bankName                           String?
+  bankAccountNumberEncrypted         String?
+  bankAccountName                    String?
+
+  bpjsKesehatanEnrolled       Boolean @default(true)
+  bpjsKetenagakerjaanEnrolled Boolean @default(true)
+  /// Jaminan Pensiun (JP) — tidak wajib untuk usia pensiun.
+  pensionEnrolled             Boolean @default(true)
+
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+
+  importBatchId String?
+  /// Diisi job anonimisasi mantan karyawan (UU PDP); data identitas sudah dihapus.
+  anonymizedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  branch     Branch      @relation(fields: [branchId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  position   Position?   @relation(fields: [positionId], references: [id])
+  manager    Employee?   @relation("ReportingLine", fields: [managerId], references: [id])
+  reports    Employee[]  @relation("ReportingLine")
+  shift      Shift?      @relation(fields: [shiftId], references: [id])
+
+  history          EmploymentHistory[]
+  family           EmployeeFamily[]
+  salaries         EmployeeSalary[]
+  attendance       AttendanceRecord[]
+  leaveRequests    LeaveRequest[]
+  overtimeRequests OvertimeRequest[]
+  reimbursements   Reimbursement[]
+  payslips         Payslip[]
+  documents        EmployeeDocument[]
+  reviews          PerformanceReview[]
+
+  @@unique([tenantId, employeeNumber])
+  @@unique([tenantId, tenantUserId])
+  @@index([tenantId, status])
+  @@index([tenantId, branchId])
+  @@index([managerId])
+  @@index([tenantId, createdAt])
+  @@map("employees")
+}
+
+/// Riwayat kepegawaian berlaku-tanggal: kantor, departemen, jabatan, atasan, jenis, status.
+/// Nilai "saat ini" di tabel employees adalah salinan baris terbaru, diubah hanya bersama baris ini.
+model EmploymentHistory {
+  id             String           @id @default(cuid())
+  tenantId       String
+  employeeId     String
+  effectiveFrom  DateTime         @db.Date
+  branchId       String
+  departmentId   String?
+  positionId     String?
+  managerId      String?
+  employmentType EmploymentType
+  status         EmploymentStatus
+  /// Snapshot nama agar riwayat tetap terbaca setelah master diganti.
+  branchName     String?
+  departmentName String?
+  positionName   String?
+  note           String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveFrom])
+  @@index([tenantId])
+  @@map("employment_history")
+}
+
+model EmployeeFamily {
+  id           String    @id @default(cuid())
+  tenantId     String
+  employeeId   String
+  name         String
+  relationship String // spouse | child | parent | sibling
+  birthDate    DateTime? @db.Date
+  nikEncrypted String?
+  isDependent  Boolean   @default(false) // tanggungan PTKP / BPJS
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@index([tenantId])
+  @@map("employee_family")
+}
+
+/// Gaji berlaku-tanggal. Isi terenkripsi: { baseSalary, items: [{ componentId, amount }] }.
+model EmployeeSalary {
+  id            String   @id @default(cuid())
+  tenantId      String
+  employeeId    String
+  effectiveFrom DateTime @db.Date
+  dataEncrypted String
+  note          String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveFrom])
+  @@index([tenantId])
+  @@map("employee_salaries")
+}
+
+// ---------------------------------------------------------------------------
+// Kehadiran & shift
+// ---------------------------------------------------------------------------
+
+model Shift {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  code                 String?
+  startTime            String // HH:mm jam kantor
+  endTime              String // HH:mm; < startTime = melewati tengah malam
+  breakMinutes         Int      @default(60)
+  lateToleranceMinutes Int      @default(0)
+  workingDays          Int[] // 0=Minggu..6=Sabtu (pola bawaan)
+  isDefault            Boolean  @default(false)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  employees   Employee[]
+  assignments ShiftAssignment[]
+
+  @@index([tenantId])
+  @@map("shifts")
+}
+
+/// Jadwal harian (fitur shiftScheduling). shiftId null = libur.
+model ShiftAssignment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  employeeId String
+  date       DateTime @db.Date
+  shiftId    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  shift Shift? @relation(fields: [shiftId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([tenantId, date])
+  @@map("shift_assignments")
+}
+
+model AttendanceRecord {
+  id                    String           @id @default(cuid())
+  tenantId              String
+  branchId              String
+  employeeId            String
+  /// Hari lokal kantor karyawan (WIB/WITA/WIT).
+  workDate              DateTime         @db.Date
+  shiftId               String?
+  scheduledStartAt      DateTime?
+  scheduledEndAt        DateTime?
+  clockInAt             DateTime?
+  clockOutAt            DateTime?
+  clockInLatitude       Decimal?         @db.Decimal(9, 6)
+  clockInLongitude      Decimal?         @db.Decimal(9, 6)
+  clockInAccuracy       Int?
+  clockInDistanceMeters Int?
+  clockOutLatitude      Decimal?         @db.Decimal(9, 6)
+  clockOutLongitude     Decimal?         @db.Decimal(9, 6)
+  clockInPhotoFileId    String?
+  clockOutPhotoFileId   String?
+  status                AttendanceStatus @default(present)
+  lateMinutes           Int              @default(0)
+  earlyLeaveMinutes     Int              @default(0)
+  workedMinutes         Int              @default(0)
+  source                AttendanceSource @default(self)
+  note                  String?
+  autoClosedAt          DateTime?
+  /// Diisi bila diubah lewat koreksi; nilai sebelumnya tersimpan di attendance_corrections.before.
+  correctedAt           DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, workDate])
+  @@index([tenantId, workDate])
+  @@index([tenantId, branchId, workDate])
+  @@map("attendance_records")
+}
+
+model AttendanceCorrection {
+  id                 String        @id @default(cuid())
+  tenantId           String
+  branchId           String
+  employeeId         String
+  code               String
+  workDate           DateTime      @db.Date
+  attendanceRecordId String?
+  requestedClockIn   DateTime?
+  requestedClockOut  DateTime?
+  reason             String
+  /// Snapshot rekam absen sebelum koreksi diterapkan (jejak, bukan suntingan).
+  before             Json?
+  status             RequestStatus @default(pending)
+  decidedAt          DateTime?
+  createdById        String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([employeeId])
+  @@map("attendance_corrections")
+}
+
+/// Satu mekanisme persetujuan untuk cuti, lembur, reimbursement, dan koreksi absen.
+model ApprovalStep {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  subjectType        String // leave | overtime | reimbursement | attendance_correction
+  subjectId          String
+  stepOrder          Int
+  approverType       String // manager | hr
+  /// Untuk langkah 'manager': rekam karyawan atasan yang berhak memutuskan.
+  approverEmployeeId String?
+  status             ApprovalStepStatus @default(pending)
+  decidedByUserId    String?
+  decidedByName      String?
+  decidedAt          DateTime?
+  note               String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([subjectType, subjectId, stepOrder])
+  @@index([tenantId, status])
+  @@index([approverEmployeeId, status])
+  @@map("approval_steps")
+}
+
+// ---------------------------------------------------------------------------
+// Cuti
+// ---------------------------------------------------------------------------
+
+model LeaveType {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  code                String
+  name                String
+  /// Jatah per tahun; null = tidak dibatasi saldo (mis. sakit dengan surat dokter).
+  annualDays          Decimal? @db.Decimal(5, 1)
+  isPaid              Boolean  @default(true)
+  requiresAttachment  Boolean  @default(false)
+  eligibleAfterMonths Int      @default(0)
+  allowHalfDay        Boolean  @default(true)
+  /// male | female | null (semua)
+  genderRestriction   Gender?
+  isActive            Boolean  @default(true)
+  order               Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  requests LeaveRequest[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("leave_types")
+}
+
+/// Buku besar saldo cuti (append-only). Saldo = SUM(amount). Idempoten per (sourceId, reason).
+model LeaveLedger {
+  id          String   @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  leaveTypeId String
+  year        Int
+  amount      Decimal  @db.Decimal(5, 1) // + hak, − pemakaian
+  reason      String // grant | usage | usage_reversal | adjustment | carry_over | expiry
+  sourceId    String
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([sourceId, reason])
+  @@index([employeeId, leaveTypeId, year])
+  @@index([tenantId])
+  @@map("leave_ledger")
+}
+
+model LeaveRequest {
+  id               String        @id @default(cuid())
+  tenantId         String
+  branchId         String
+  employeeId       String
+  leaveTypeId      String
+  code             String
+  startDate        DateTime      @db.Date
+  endDate          DateTime      @db.Date
+  halfDay          Boolean       @default(false)
+  /// Hari kerja yang terpakai, dihitung server (libur & akhir pekan tidak dihitung).
+  days             Decimal       @db.Decimal(5, 1)
+  reason           String?
+  attachmentFileId String?
+  status           RequestStatus @default(pending)
+  decidedAt        DateTime?
+  cancelledAt      DateTime?
+  createdById      String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([employeeId, startDate])
+  @@index([tenantId, createdAt])
+  @@map("leave_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Lembur & reimbursement
+// ---------------------------------------------------------------------------
+
+model OvertimeRequest {
+  id           String        @id @default(cuid())
+  tenantId     String
+  branchId     String
+  employeeId   String
+  code         String
+  workDate     DateTime      @db.Date
+  startAt      DateTime
+  endAt        DateTime
+  minutes      Int
+  /// workday | rest_day | holiday — menentukan pengali upah lembur.
+  dayType      String
+  reason       String
+  status       RequestStatus @default(pending)
+  decidedAt    DateTime?
+  /// Run payroll yang membayar lembur ini (diisi saat run disetujui).
+  payrollRunId String?
+  createdById  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([employeeId, workDate])
+  @@map("overtime_requests")
+}
+
+model Reimbursement {
+  id             String        @id @default(cuid())
+  tenantId       String
+  branchId       String
+  employeeId     String
+  code           String
+  category       String // transport | meal | medical | travel | equipment | other
+  expenseDate    DateTime      @db.Date
+  amount         Decimal       @db.Decimal(14, 2)
+  approvedAmount Decimal?      @db.Decimal(14, 2)
+  description    String
+  receiptFileId  String?
+  status         RequestStatus @default(pending)
+  decidedAt      DateTime?
+  payrollRunId   String?
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([employeeId, expenseDate])
+  @@map("reimbursements")
+}
+
+// ---------------------------------------------------------------------------
+// Penggajian (D5: dihitung & dicatat; transfer di luar platform)
+// ---------------------------------------------------------------------------
+
+model SalaryComponent {
+  id        String              @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  kind      SalaryComponentKind
+  /// Masuk penghasilan bruto PPh 21.
+  taxable   Boolean             @default(true)
+  /// Masuk dasar upah BPJS (gaji pokok + tunjangan tetap).
+  bpjsBase  Boolean             @default(false)
+  /// Ikut dasar THR (upah = gaji pokok + tunjangan tetap).
+  thrBase   Boolean             @default(false)
+  isActive  Boolean             @default(true)
+  order     Int                 @default(0)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("salary_components")
+}
+
+model PayrollRun {
+  id                String           @id @default(cuid())
+  tenantId          String
+  code              String
+  periodYear        Int
+  periodMonth       Int
+  periodStart       DateTime         @db.Date
+  periodEnd         DateTime         @db.Date
+  /// null = semua kantor
+  branchId          String?
+  includeThr        Boolean          @default(false)
+  status            PayrollRunStatus @default(draft)
+  employeeCount     Int              @default(0)
+  calculatedCount   Int              @default(0)
+  // Total agregat run (bukan per orang) — tidak dienkripsi.
+  totalGross        Decimal          @default(0) @db.Decimal(16, 2)
+  totalDeductions   Decimal          @default(0) @db.Decimal(16, 2)
+  totalNet          Decimal          @default(0) @db.Decimal(16, 2)
+  totalPph21        Decimal          @default(0) @db.Decimal(16, 2)
+  totalEmployerCost Decimal          @default(0) @db.Decimal(16, 2)
+  calculatedAt      DateTime?
+  approvedAt        DateTime?
+  approvedById      String?
+  paidRecordedAt    DateTime?
+  paidRecordedById  String?
+  paidDate          DateTime?        @db.Date
+  voidedAt          DateTime?
+  voidedById        String?
+  voidReason        String?
+  replacesRunId     String?
+  note              String?
+  createdById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  payslips Payslip[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, periodYear, periodMonth])
+  @@index([tenantId, status])
+  @@map("payroll_runs")
+}
+
+/// Snapshot per karyawan per run. Rincian & jumlah per orang terenkripsi (D7).
+model Payslip {
+  id             String    @id @default(cuid())
+  tenantId       String
+  runId          String
+  employeeId     String
+  branchId       String
+  code           String
+  employeeName   String
+  employeeNumber String
+  departmentName String?
+  positionName   String?
+  /// { earnings[], deductions[], employer[], gross, net, pph21, terCategory, terRate, ... }
+  dataEncrypted  String
+  calculatedAt   DateTime  @default(now())
+  viewedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  run      PayrollRun @relation(fields: [runId], references: [id])
+  employee Employee   @relation(fields: [employeeId], references: [id])
+
+  @@unique([runId, employeeId])
+  @@unique([tenantId, code])
+  @@index([employeeId])
+  @@index([tenantId])
+  @@map("payslips")
+}
+
+// ---------------------------------------------------------------------------
+// Dokumen & kinerja
+// ---------------------------------------------------------------------------
+
+model EmployeeDocument {
+  id                String    @id @default(cuid())
+  tenantId          String
+  /// null = dokumen perusahaan (peraturan, SOP)
+  employeeId        String?
+  category          String // contract | identity | certificate | tax | medical | other | company
+  title             String
+  fileId            String
+  expiresAt         DateTime? @db.Date
+  visibleToEmployee Boolean   @default(true)
+  uploadedById      String?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  employee Employee? @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId, deletedAt])
+  @@index([employeeId])
+  @@index([tenantId, expiresAt])
+  @@map("employee_documents")
+}
+
+model PerformanceCycle {
+  id          String                 @id @default(cuid())
+  tenantId    String
+  name        String
+  periodStart DateTime               @db.Date
+  periodEnd   DateTime               @db.Date
+  status      PerformanceCycleStatus @default(draft)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  reviews PerformanceReview[]
+
+  @@index([tenantId])
+  @@map("performance_cycles")
+}
+
+model PerformanceReview {
+  id                 String                  @id @default(cuid())
+  tenantId           String
+  cycleId            String
+  employeeId         String
+  reviewerEmployeeId String?
+  status             PerformanceReviewStatus @default(pending)
+  /// [{ title, weight, selfScore, score, note }] — skor 1..5
+  goals              Json
+  selfNote           String?
+  managerNote        String?
+  finalScore         Decimal?                @db.Decimal(4, 2)
+  selfSubmittedAt    DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  cycle    PerformanceCycle @relation(fields: [cycleId], references: [id])
+  employee Employee         @relation(fields: [employeeId], references: [id])
+
+  @@unique([cycleId, employeeId])
+  @@index([tenantId])
+  @@index([reviewerEmployeeId])
+  @@map("performance_reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Data referensi statutori (platform) & rate limit bersama
+// ---------------------------------------------------------------------------
+
+/// Tarif berlaku-tanggal yang dipelihara staf: pph21_ter, pph21_progressive, ptkp, bpjs, national_holidays.
+model ReferenceData {
+  id            String   @id @default(cuid())
+  key           String
+  effectiveFrom DateTime @db.Date
+  data          Json
+  note          String?
+  updatedById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([key, effectiveFrom])
+  @@map("reference_data")
+}
+
+/// Penghitung rate limit lintas instance Vercel (jendela tetap).
+model RateLimitBucket {
+  key     String   @id
+  count   Int      @default(0)
+  resetAt DateTime
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
+}
