@@ -125,7 +125,8 @@ export async function teamSeatUsage(tenantId: string) {
 }
 
 export async function storageUsageBytes(tenantId: string): Promise<number> {
-  const result = await prisma.storedFile.aggregate({ where: { tenantId, deletedAt: null }, _sum: { size: true } })
+  // Berkas ekspor sementara (dihapus otomatis 24 jam) tidak dihitung ke kuota.
+  const result = await prisma.storedFile.aggregate({ where: { tenantId, deletedAt: null, purpose: { not: 'export' } }, _sum: { size: true } })
   return result._sum.size ?? 0
 }
 

@@ -1,17 +1,44 @@
 import type { H3Event } from 'h3'
 import { abilitiesFor, isTenantRole } from '#shared/utils/tenant-abilities'
 import { credentialsProvider } from './providers/credentials'
+import { googleProvider } from './providers/google'
+import { HANDOFF_TTL_SECONDS, handoffProvider } from './providers/handoff'
 import { jwtExpiresIn, jwtSessionDriver } from './sessions/jwt'
-import type { Audience, AuthProvider, AuthUser, SessionClaims, SessionDriver, SignInResult } from './types'
+import type { Audience, AuthProvider, AuthUser, RedirectAuthProvider, SessionClaims, SessionDriver, SignInResult } from './types'
 
 // Fasad autentikasi — SATU-SATUNYA titik impor untuk kode bisnis.
 // Tidak ada handler/halaman yang boleh tahu bahwa di bawahnya JWT + bcrypt.
 
-export type { Audience, AuthUser, SessionClaims, SignInResult } from './types'
+export type { Audience, AuthUser, ExternalProfile, SessionClaims, SignInResult } from './types'
 export { hashPassword, verifyPassword } from './providers/credentials'
 
 const providers: Record<string, AuthProvider> = {
-  [credentialsProvider.name]: credentialsProvider
+  [credentialsProvider.name]: credentialsProvider,
+  [handoffProvider.name]: handoffProvider
+}
+
+const redirectProviders: Record<string, RedirectAuthProvider> = {
+  [googleProvider.name]: googleProvider
+}
+
+/** Penyedia login eksternal (Google, …) untuk audiens ini, atau null bila tidak dikenal. */
+export function getRedirectProvider(name: string, audience: Audience): RedirectAuthProvider | null {
+  const provider = redirectProviders[name]
+  return provider && provider.supports.includes(audience) ? provider : null
+}
+
+/** Nama penyedia eksternal yang sudah dikonfigurasi (untuk menampilkan tombol). */
+export function availableRedirectProviders(audience: Audience): string[] {
+  return Object.values(redirectProviders).filter(p => p.supports.includes(audience) && p.isConfigured()).map(p => p.name)
+}
+
+/** Kode sekali pakai (disimpan sebagai SHA-256, 120 detik) untuk ditukar menjadi sesi. */
+export async function createAuthHandoff(input: { tenantUserId: string, isNew?: boolean }): Promise<string> {
+  const code = randomToken(32)
+  await prisma.authHandoff.create({
+    data: { tenantUserId: input.tenantUserId, tokenHash: sha256(code), isNew: !!input.isNew, expiresAt: new Date(Date.now() + HANDOFF_TTL_SECONDS * 1000) }
+  })
+  return code
 }
 
 const sessionDrivers: Record<string, SessionDriver> = {

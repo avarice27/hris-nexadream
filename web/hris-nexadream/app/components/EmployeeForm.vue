@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABELS, GENDER_LABELS, MARITAL_LABELS, RELIGION_LABELS, type GENDERS, type MARITAL_STATUSES, type RELIGIONS } from '#shared/utils/hr'
-import { PTKP_LABELS, PTKP_STATUSES } from '#shared/utils/payroll-rules'
+import { PTKP_LABELS, PTKP_STATUSES, TAX_METHODS, TAX_METHOD_LABELS } from '#shared/utils/payroll-rules'
 
 // Form karyawan. mode 'create' = semua field; mode 'edit' = profil, kontak, pajak/BPJS, data sensitif
 // (kantor/departemen/jabatan/atasan/status diubah lewat "Perubahan kepegawaian" yang berlaku-tanggal).
@@ -26,6 +26,7 @@ const form = reactive({
   religion: ((i.religion as string | null) ?? undefined) as (typeof RELIGIONS)[number] | undefined,
   maritalStatus: ((i.maritalStatus as string | null) ?? undefined) as (typeof MARITAL_STATUSES)[number] | undefined,
   ptkpStatus: (i.ptkpStatus as string) ?? 'TK0',
+  taxMethod: (i.taxMethod as string) ?? 'gross',
   address: s('address'),
   joinDate: s('joinDate') || localTodayKey(),
   probationEndDate: s('probationEndDate'),
@@ -56,6 +57,7 @@ const opts = <T extends string>(map: Record<T, string>) => (Object.keys(map) as 
 const nn = (v: string | undefined | null) => (v ? v : null)
 const typeOptions = EMPLOYMENT_TYPES.map(t => ({ label: EMPLOYMENT_TYPE_LABELS[t], value: t as string }))
 const ptkpOptions = PTKP_STATUSES.map(p => ({ label: PTKP_LABELS[p], value: p as string }))
+const taxMethodOptions = TAX_METHODS.map(m => ({ label: TAX_METHOD_LABELS[m], value: m as string }))
 
 function payload() {
   const sensitive = Object.fromEntries((['nik', 'npwp', 'bpjsKesehatanNumber', 'bpjsKetenagakerjaanNumber', 'bankAccountNumber'] as const)
@@ -63,7 +65,7 @@ function payload() {
     .map(k => [k, form[k]]))
   const common = {
     fullName: form.fullName, email: nn(form.email), phone: nn(form.phone), gender: form.gender ?? null, birthPlace: nn(form.birthPlace),
-    birthDate: nn(form.birthDate), religion: form.religion ?? null, maritalStatus: form.maritalStatus ?? null, ptkpStatus: form.ptkpStatus,
+    birthDate: nn(form.birthDate), religion: form.religion ?? null, maritalStatus: form.maritalStatus ?? null, ptkpStatus: form.ptkpStatus, taxMethod: form.taxMethod,
     address: nn(form.address), probationEndDate: nn(form.probationEndDate), contractEndDate: nn(form.contractEndDate), shiftId: form.shiftId ?? null,
     bpjsKesehatanEnrolled: form.bpjsKesehatanEnrolled, bpjsKetenagakerjaanEnrolled: form.bpjsKetenagakerjaanEnrolled, pensionEnrolled: form.pensionEnrolled,
     emergencyContactName: nn(form.emergencyContactName), emergencyContactPhone: nn(form.emergencyContactPhone), emergencyContactRelation: nn(form.emergencyContactRelation),
@@ -285,6 +287,16 @@ async function submit() {
           <USelect
             v-model="form.ptkpStatus"
             :items="ptkpOptions"
+            class="w-full"
+          />
+        </UFormField>
+        <UFormField
+          label="Metode PPh 21"
+          hint="Gross-up: perusahaan menanggung pajak lewat tunjangan."
+        >
+          <USelect
+            v-model="form.taxMethod"
+            :items="taxMethodOptions"
             class="w-full"
           />
         </UFormField>

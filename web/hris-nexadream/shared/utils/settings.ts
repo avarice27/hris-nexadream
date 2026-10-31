@@ -67,7 +67,9 @@ export const SETTINGS_CATALOG: SettingDef[] = [
   { key: 'billing.trialPlanSlug', group: 'billing', type: 'string', label: 'Paket uji coba', default: 'business' },
   { key: 'billing.defaultPlanSlug', group: 'billing', type: 'string', label: 'Paket bawaan setelah turun', default: 'free' },
   { key: 'billing.oneTrialPerEmail', group: 'billing', type: 'boolean', label: 'Satu uji coba per email', default: 'true' },
-  { key: 'billing.invoiceTaxRatePercent', group: 'billing', type: 'number', label: 'PPN pada faktur (%)', hint: 'Usulan; konfirmasi dengan akuntan.', default: '11' },
+  { key: 'billing.pkpRegistered', group: 'billing', type: 'boolean', label: 'Penjual berstatus PKP', hint: 'Bila aktif, invoice merinci PPN dari harga (harga sudah termasuk PPN).', default: 'true' },
+  { key: 'billing.vatRatePercent', group: 'billing', type: 'number', label: 'Tarif PPN (%)', hint: 'UU HPP: 12%, dikenakan atas DPP nilai lain 11/12 (PMK 131/2024) — efektif 11%.', default: '12' },
+  { key: 'billing.sellerNpwp', group: 'billing', type: 'string', label: 'NPWP penjual', hint: 'Dicetak pada invoice. Alamat diambil dari Alamat perusahaan.', default: '' },
 
   // privacy
   { key: 'privacy.retentionMonths', group: 'privacy', type: 'number', label: 'Retensi data platform (bulan)', default: '24' },

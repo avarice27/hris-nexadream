@@ -2,8 +2,8 @@ import type { H3Event } from 'h3'
 import { z } from 'zod'
 import { DEFAULT_SALARY_COMPONENTS } from '#shared/utils/hr'
 import {
-  bpjsContributions, finalPeriodTax, isPtkpStatus, monthlyTerTax, overtimePay, terCategory, thrAmount,
-  type OvertimeDayType, type PayslipData, type PayslipLine, type PtkpStatus
+  bpjsContributions, finalPeriodTax, grossUpAllowance, isPtkpStatus, monthlyTerTax, overtimePay, terCategory, thrAmount,
+  type OvertimeDayType, type PayslipData, type PayslipLine, type PtkpStatus, type TaxMethod
 } from '#shared/utils/payroll-rules'
 import { dateKeyToDb, dateKeysBetween, dbDateToKey, todayKey } from '#shared/utils/timezone'
 import { formatIDR } from '#shared/utils/format'
@@ -262,25 +262,33 @@ export function computePayslip(c: CalcContext, employee: Employee, input: {
 
   // PPh 21: bruto = penghasilan kena pajak + premi JKK, JKM, BPJS Kesehatan yang dibayar perusahaan.
   const taxableEarnings = earnings.filter(e => e.taxable).reduce((s, e) => s + e.amount, 0)
-  const taxableGross = taxableEarnings + bpjs.kesehatanCompany + bpjs.jkk + bpjs.jkm
+  const baseTaxableGross = taxableEarnings + bpjs.kesehatanCompany + bpjs.jkk + bpjs.jkm
   const month = c.run.periodMonth
   const leaving = !!employee.endDate && dbDateToKey(employee.endDate) <= c.endKey
-  const ter = monthlyTerTax(taxableGross, status, c.ref)
-  let pph21 = ter.tax
-  let method: PayslipData['pph21Method'] = 'ter'
-  if (month === 12 || leaving) {
-    const prevGross = input.previous.reduce((s, p) => s + p.taxableGross, 0)
+  const finalPeriod = month === 12 || leaving
+  const method: PayslipData['pph21Method'] = finalPeriod ? 'final_period' : 'ter'
+  const taxMethod: TaxMethod = employee.taxMethod === 'gross_up' ? 'gross_up' : 'gross'
+  // PPh 21 untuk bruto tertentu (TER bulanan, atau Pasal 17 setahun di masa terakhir).
+  const taxOn = (taxableGross: number) => {
+    if (!finalPeriod) return { tax: monthlyTerTax(taxableGross, status, c.ref).tax, annual: null }
     const result = finalPeriodTax({
-      annualGross: prevGross + taxableGross,
+      annualGross: input.previous.reduce((s, p) => s + p.taxableGross, 0) + taxableGross,
       annualEmployeePension: input.previous.reduce((s, p) => s + p.employeePension, 0) + employeePension,
       monthsWorked: input.previous.length + 1,
       taxWithheldBefore: input.previous.reduce((s, p) => s + p.pph21, 0),
       status
     }, c.ref)
-    pph21 = result.tax
-    method = 'final_period'
-    notes.push(`PPh 21 masa terakhir: PKP setahun ${formatIDR(result.taxableIncome)}, pajak setahun ${formatIDR(result.annualTax)}.`)
+    return { tax: result.tax, annual: result }
   }
+  // Gross-up: tunjangan PPh 21 (kena pajak) sebesar pajaknya sendiri.
+  const taxAllowance = taxMethod === 'gross_up' ? grossUpAllowance(t => taxOn(baseTaxableGross + t).tax).allowance : 0
+  if (taxAllowance > 0) earnings.push({ code: 'TAX_ALLOWANCE', name: 'Tunjangan PPh 21 (gross-up)', amount: taxAllowance, taxable: true })
+  const taxableGross = baseTaxableGross + taxAllowance
+  const ter = monthlyTerTax(taxableGross, status, c.ref)
+  const taxed = taxOn(taxableGross)
+  const pph21 = taxed.tax
+  if (taxed.annual) notes.push(`PPh 21 masa terakhir: PKP setahun ${formatIDR(taxed.annual.taxableIncome)}, pajak setahun ${formatIDR(taxed.annual.annualTax)}.`)
+  if (taxMethod === 'gross_up') notes.push('Metode gross-up: PPh 21 ditanggung perusahaan melalui tunjangan PPh 21.')
   if (pph21 > 0) deductions.push({ code: 'PPH21', name: 'PPh 21', amount: pph21 })
   else if (pph21 < 0) earnings.push({ code: 'PPH21_REFUND', name: 'Kelebihan potong PPh 21', amount: -pph21, taxable: false })
 
@@ -295,7 +303,7 @@ export function computePayslip(c: CalcContext, employee: Employee, input: {
       baseSalary: salary.baseSalary,
       earnings, deductions, employer,
       gross, totalDeductions, net: gross - totalDeductions,
-      taxableGross, pph21, pph21Method: method, terCategory: terCategory(status), terRate: ter.rate, employeePension,
+      taxableGross, pph21, pph21Method: method, taxMethod, terCategory: terCategory(status), terRate: ter.rate, employeePension,
       attendance: input.attendance,
       overtimeMinutes,
       notes,

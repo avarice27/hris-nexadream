@@ -283,3 +283,42 @@ and the owner gets an `employee_limit_reached` bell. Existing employees keep wor
   offices deleted; the tenant row stays as a tombstone ("Perusahaan dihapus").
 - Former employees of active companies are anonymised (and their payslips deleted) once
   `financialRetentionYears` have passed since their end date.
+
+## D24 — Official-rule pass, Vercel Blob, Google sign-in, invoices (Proposed, 2026-10-31)
+
+Sources and open verification items: `tasks/COMPLIANCE_REFERENCE.md`.
+
+- **Storage = Vercel Blob** for every file (`STORAGE_PROVIDER=vercel_blob`, default). Two stores
+  because access is fixed per store: Public (logos, avatars) and Private (documents, attendance
+  selfies, receipts, exports). Credentials per store: `BLOB_PUBLIC_READ_WRITE_TOKEN` /
+  `BLOB_PRIVATE_READ_WRITE_TOKEN` (or `BLOB_*_STORE_ID` + OIDC). Private objects are read through
+  presigned GET URLs (`issueSignedToken` + `presignUrl`, ≤ 5 min); bytes never pass through our
+  functions. Supabase/S3 drivers stay available.
+- **Google sign-in** (blueprint 03 §5) is built but inert until `GOOGLE_CLIENT_ID` /
+  `GOOGLE_CLIENT_SECRET` are set: the button only appears when configured. Session tokens never
+  travel in URLs (single-use 120 s handoff code). Verified email → links to an existing account;
+  unknown email → new owner + company (phone collected in onboarding); unverified email never links.
+- **Payroll rates**: TER A/B/C, Pasal 17, PTKP, biaya jabatan unchanged; JP wage cap
+  Rp11.086.300 from 1 March 2026 (new `reference_data` row, effective-dated). PPh 21 DTP
+  (PMK 105/2025) is not modelled.
+- **Gross-up**: per-employee `taxMethod` = `gross` (default) | `gross_up`. Gross-up adds a taxable
+  "Tunjangan PPh 21" equal to the tax it causes (fixed-point iteration; TER band oscillation
+  resolved with the smallest covering allowance). Also applied in the final-period recompute.
+- **Holidays**: 2026 (SKB 1497/2025 …, 17 + 8 cuti bersama) and 2027 (SKB 1205/2026 …, 18 + 8)
+  in reference data; companies import them. Cuti bersama stays a non-working day; deducting it
+  from annual leave is a follow-up.
+- **Subscription invoices**: prices are **inclusive of PPN**. When `billing.pkpRegistered`, the
+  invoice shows DPP = total ÷ (1 + 12% × 11/12), DPP nilai lain = 11/12 × DPP, PPN = total − DPP
+  (PMK 131/2024, effective 11%). One immutable `SubscriptionInvoice` per paid payment, number
+  `INV/<year WIB>/<6-digit global sequence>`. It is a commercial invoice + receipt, not a Faktur
+  Pajak — staff record the Coretax Faktur Pajak number afterwards. Receipts > Rp5.000.000 flag
+  bea meterai Rp10.000 (e-Meterai on request). `billing.invoiceTaxRatePercent` removed.
+- **Legal pages** rewritten for UU PDP (controller/processor, Pasal 20 bases, rights Pasal 5–13,
+  3×24 h breach notice, Pasal 56 transfer), UU 8/1999 Pasal 18 (no one-sided change/no-refund
+  clauses: explicit refund cases, 14-day notice + pro-rata refund on rejected changes), UU 24/2009
+  (Bahasa Indonesia prevails), UU KUP retention. Still recommended: lawyer review before launch.
+- **Exports**: large exports are `ExportJob`s advanced in 1 000-row resumable steps (client-driven,
+  cron continues abandoned jobs), stored encrypted while partial, final CSV private, 24 h TTL,
+  excluded from the storage quota; owner/HR only (`reports.read`), payslips also need `payroll.read`.
+- **API keys** never read personal data (documents, selfies, salary) without the `sensitive`
+  scope — enforced centrally in `auditSensitiveRead`.

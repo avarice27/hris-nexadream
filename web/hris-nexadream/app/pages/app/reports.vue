@@ -26,6 +26,7 @@ async function load() {
     if (tab.value === 'headcount') headcount.value = await apiFetch('/api/app/reports/headcount', { query: { from: from.value, to: to.value } })
     if (tab.value === 'attendance') attendance.value = await apiFetch('/api/app/reports/attendance', { query: { from: from.value, to: to.value } })
     if (tab.value === 'leave') leave.value = await apiFetch('/api/app/reports/leave', { query: { year: year.value } })
+    if (tab.value === 'exports') return
     if (tab.value === 'payroll') payroll.value = await apiFetch('/api/app/reports/payroll', { query: { year: year.value } })
   } catch (error) {
     toast.error(error)
@@ -43,7 +44,8 @@ const tabs = computed(() => [
   { label: 'Karyawan', value: 'headcount', icon: 'i-lucide-users' },
   { label: 'Absensi', value: 'attendance', icon: 'i-lucide-clock' },
   { label: 'Cuti', value: 'leave', icon: 'i-lucide-plane' },
-  ...(auth.hasAbility('payroll.read') ? [{ label: 'Payroll', value: 'payroll', icon: 'i-lucide-wallet' }] : [])
+  ...(auth.hasAbility('payroll.read') ? [{ label: 'Payroll', value: 'payroll', icon: 'i-lucide-wallet' }] : []),
+  { label: 'Ekspor besar', value: 'exports', icon: 'i-lucide-file-down' }
 ])
 const yearOptions = [year.value - 1, year.value].map(y => ({ label: String(y), value: y }))
 const maxOf = (groups: Group[]) => Math.max(1, ...groups.map(g => g.count))
@@ -54,6 +56,7 @@ const clamped = computed(() => (tab.value === 'headcount' ? headcount.value : ta
   <PagePanel title="Laporan">
     <template #actions>
       <UButton
+        v-if="tab !== 'exports'"
         label="Ekspor CSV"
         icon="i-lucide-download"
         variant="outline"
@@ -67,7 +70,11 @@ const clamped = computed(() => (tab.value === 'headcount' ? headcount.value : ta
         :items="tabs"
         :content="false"
       />
-      <div class="flex flex-wrap items-center gap-3">
+      <ExportJobsPanel v-if="tab === 'exports'" />
+      <div
+        v-else
+        class="flex flex-wrap items-center gap-3"
+      >
         <template v-if="tab === 'headcount' || tab === 'attendance'">
           <UInput
             v-model="from"

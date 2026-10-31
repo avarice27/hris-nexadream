@@ -3,19 +3,21 @@ import { localStorageDriver } from './local'
 import { s3Storage } from './s3'
 import { supabaseStorage } from './supabase'
 import type { StorageDriver } from './types'
+import { vercelBlobStorage } from './vercel-blob'
 
 // Fasad penyimpanan — satu-satunya titik impor untuk kode bisnis.
-// STORAGE_PROVIDER = 'supabase' | 's3' | 'local'. Di development, bila driver terpilih belum
+// STORAGE_PROVIDER = 'vercel_blob' (bawaan) | 'supabase' | 's3' | 'local'. Di development, bila driver terpilih belum
 // dikonfigurasi, otomatis jatuh ke 'local' agar unggahan tetap bisa diuji.
 
 const drivers: Record<string, StorageDriver> = {
+  [vercelBlobStorage.provider]: vercelBlobStorage,
   [supabaseStorage.provider]: supabaseStorage,
   [s3Storage.provider]: s3Storage,
   [localStorageDriver.provider]: localStorageDriver
 }
 
 export function getStorageDriver(): StorageDriver {
-  const name = process.env.STORAGE_PROVIDER || 'supabase'
+  const name = process.env.STORAGE_PROVIDER || 'vercel_blob'
   const driver = drivers[name]
   if (!driver) throw new Error(`Unknown STORAGE_PROVIDER "${name}".`)
   if (driver.isConfigured()) return driver

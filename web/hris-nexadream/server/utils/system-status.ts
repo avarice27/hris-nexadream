@@ -31,7 +31,7 @@ export async function readinessChecks(): Promise<ReadinessCheck[]> {
     secretCheck('SETTINGS_SECRET', 'Kunci enkripsi pengaturan', env.SETTINGS_SECRET, [env.JWT_SECRET, env.HR_DATA_KEY]),
     secretCheck('HR_DATA_KEY', 'Kunci enkripsi data karyawan (D7)', env.HR_DATA_KEY, [env.JWT_SECRET, env.SETTINGS_SECRET]),
     { key: 'DATABASE_URL', label: 'Database pooled (Neon)', ok: /pooler|pgbouncer=true/.test(dbUrl), severity: 'warning', hint: 'Gunakan URL pooler Neon (host berakhiran -pooler) untuk serverless.' },
-    { key: 'STORAGE', label: 'Penyimpanan file (Supabase/S3)', ok: storageOk, severity: 'error', hint: 'Atur STORAGE_PROVIDER dan kredensialnya; buat bucket publik & PRIVAT.' },
+    { key: 'STORAGE', label: 'Penyimpanan file (Vercel Blob)', ok: storageOk, severity: 'error', hint: 'Buat dua Blob store (Public & Private) lalu isi BLOB_PUBLIC_READ_WRITE_TOKEN dan BLOB_PRIVATE_READ_WRITE_TOKEN.' },
     { key: 'SMTP', label: 'Email keluar (SMTP)', ok: !!smtpHost, severity: 'error', hint: 'Isi Pengaturan → Email keluar lalu kirim email uji.' },
     { key: 'GATEWAY', label: 'Payment gateway aktif (non-sandbox)', ok: !!gateway && !gateway.isSandbox, severity: 'error', hint: 'Aktifkan Nexadream Payment Hub dengan API key produksi.' },
     { key: 'SITE_URL', label: 'URL situs https', ok: siteUrl.startsWith('https://') && (!production || !siteUrl.includes('localhost')), severity: 'warning', hint: 'Pengaturan → URL situs dipakai di tautan email.' },

@@ -81,3 +81,9 @@ Dev logins after seeding: superadmin `admin@nexadream.id`; demo company
 - `/api/v1` handlers use `defineApiV1Handler` (pass `{ apiKey: true }` only for integrator endpoints)
   and every v1 endpoint needs an entry in `shared/utils/api-docs.ts` + `API_CHANGELOG.md`.
 - Vue templates: build `{ label, value }` option arrays in `<script>`, not inline in the template (vue-tsc).
+- Storage: Vercel Blob is the default driver (two stores: public + private). Never store a private
+  object's URL — always issue a signed URL per request (`signedFileUrl`, ≤ 5 min).
+- Large or long work (exports, payroll) = resumable steps persisted in the DB, never one long request.
+- Subscription invoices are immutable snapshots (`ensureInvoiceForPayment`); prices include PPN.
+- Statutory facts (rates, holidays, legal citations) come from `tasks/COMPLIANCE_REFERENCE.md` and
+  live in data (`reference_data`), not code literals.

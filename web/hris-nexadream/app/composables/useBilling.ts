@@ -23,6 +23,7 @@ export interface BillingPayment {
   paymentType: string | null
   redirectUrl: string | null
   paidAt: string | null
+  hasInvoice?: boolean
   expiresAt: string | null
   createdAt: string
 }

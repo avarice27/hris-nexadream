@@ -86,6 +86,15 @@ watch(page, load)
               :color="statusMeta(PAYMENT_STATUS_META, payment.status).color"
               variant="subtle"
             />
+            <UButton
+              v-if="payment.hasInvoice"
+              :to="`/app/billing/invoices/${payment.id}`"
+              label="Invoice"
+              icon="i-lucide-file-text"
+              size="xs"
+              variant="outline"
+              color="neutral"
+            />
           </li>
         </ul>
       </UCard>

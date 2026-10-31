@@ -38,6 +38,14 @@ const chips = computed(() => [
   ...['present', 'late', 'not_yet', 'absent', 'leave', 'off', 'holiday'].filter(k => counts.value[k]).map(k => ({ key: k, label: ATTENDANCE_STATUS_META[k]!.label, n: counts.value[k]! }))
 ])
 
+// Foto selfie absen
+const photoOpen = ref(false)
+const photoTarget = ref<{ employeeId: string, name: string } | null>(null)
+function openPhotos(row: Row) {
+  photoTarget.value = { employeeId: row.employeeId, name: row.fullName }
+  photoOpen.value = true
+}
+
 // Input manual
 const open = ref(false)
 const form = reactive({ employeeId: '', name: '', workDate: '', clockIn: '', clockOut: '', note: '' })
@@ -176,6 +184,15 @@ async function act(c: Correction, decision: 'approved' | 'rejected') {
                         name="i-lucide-map-pin"
                         class="size-3 text-muted"
                         :title="`${r.record.clockInDistanceMeters} m dari kantor`"
+                      />
+                      <UButton
+                        v-if="r.record?.hasPhoto"
+                        icon="i-lucide-camera"
+                        size="xs"
+                        variant="ghost"
+                        color="neutral"
+                        aria-label="Lihat foto absen"
+                        @click="openPhotos(r)"
                       />
                     </td>
                     <td class="px-4 py-2 tabular">
@@ -342,5 +359,12 @@ async function act(c: Correction, decision: 'approved' | 'rejected') {
         </div>
       </template>
     </UModal>
+
+    <AttendancePhotoDialog
+      v-model:open="photoOpen"
+      :employee-id="photoTarget?.employeeId ?? null"
+      :employee-name="photoTarget?.name"
+      :date="date"
+    />
   </PagePanel>
 </template>

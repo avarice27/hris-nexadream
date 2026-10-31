@@ -2,6 +2,17 @@
 
 ## 0.1.0 (Draft)
 
+- Files are now stored in Vercel Blob (public store for logos and photos, private store for documents, attendance selfies, receipts and exports).
+- Sign in or register with Google, available as soon as the Google client id and secret are set.
+- The official Nexadream logo is used in the app, favicon and emails.
+- Payroll rates checked against the official rules; the pension (JP) wage cap is Rp11.086.300 from March 2026. The 2026 and 2027 national holidays and cuti bersama can be imported.
+- Gross-up tax method per employee: the company pays the PPh 21 through a tax allowance.
+- Invoices and payment receipts for subscriptions, with PPN shown per PMK 131/2024; staff can record the Faktur Pajak number.
+- HR and managers can view attendance selfies; every view is logged.
+- Large exports (employees, attendance, leave, payslips) run in the background and stay downloadable for 24 hours.
+- Final privacy policy, terms and payment policy based on Indonesian law.
+- API v1 now covers overtime, reimbursements, holidays, attendance calendars, documents, reports and performance.
+
 - Project skeleton: Nuxt 4 + Nuxt UI v4, Prisma 7 (pg adapter), Vercel preset, design tokens (indigo/teal, light + dark).
 - Full platform database schema and first migration; idempotent seed for permissions, staff roles, admin menus, settings, email/notification templates, the four plans (Free, Growth, Business, Enterprise), the payment gateway row, legal pages, FAQ, the first superadmin and a demo company.
 - Sign-in for company users (email or phone + password) and back-office staff, with per-identifier and per-IP rate limits and an audit trail of successful and failed sign-ins.

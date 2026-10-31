@@ -49,7 +49,11 @@ export function decryptHrJson<T>(value: string | null | undefined, fallback: T):
  * Setiap pembacaan data identitas/gaji: blokir saat impersonasi (kecuali hak eksplisit),
  * lalu catat aktor + karyawan + grup field (bukan nilainya).
  */
-export async function auditSensitiveRead(event: H3Event, ctx: TenantContext, detail: { employeeId: string, fieldGroup: 'identity' | 'bank' | 'family' | 'salary' | 'payslip' | 'document' }) {
+export async function auditSensitiveRead(event: H3Event, ctx: TenantContext, detail: { employeeId: string, fieldGroup: 'identity' | 'bank' | 'family' | 'salary' | 'payslip' | 'document' | 'attendance_photo' }) {
+  // API key tanpa scope `sensitive` tidak pernah membuka data pribadi (dokumen, foto, gaji).
+  if (ctx.apiKey && !ctx.apiKey.scopes.includes('sensitive')) {
+    throw httpError(403, 'FORBIDDEN', 'API key ini tidak memiliki scope sensitive.', { requiredScope: 'sensitive' })
+  }
   await assertSensitiveReadAllowed(event, { fieldGroup: detail.fieldGroup, targetType: 'employee', targetId: detail.employeeId })
   await recordAudit(event, {
     audience: 'tenant', action: detail.fieldGroup === 'salary' || detail.fieldGroup === 'payslip' ? 'salary.read' : 'employee.sensitive_read',

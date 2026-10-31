@@ -54,6 +54,8 @@ async function onSubmit() {
       :title="errorMessage"
     />
 
+    <OAuthButtons mode="register" />
+
     <UForm
       :schema="schema"
       :state="state"

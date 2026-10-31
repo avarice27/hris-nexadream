@@ -60,6 +60,8 @@ export async function applyPayment(normalized: NormalizedPayment): Promise<Apply
         tx
       })
     })
+    // Invoice + bukti pembayaran (D24) — best-effort, juga diterbitkan saat pertama dibuka.
+    await issueInvoiceSafely(payment.id)
     // Langganan baru berlaku — kantor/seat yang dinonaktifkan tidak otomatis aktif lagi:
     // pemilik memilih sendiri (data tetap ada).
     const owner = await ownerOf(payment.tenantId)

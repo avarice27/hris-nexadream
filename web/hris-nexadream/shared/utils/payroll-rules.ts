@@ -1,7 +1,8 @@
 // Aturan perhitungan payroll Indonesia — fungsi murni, diuji unit (tests/payroll-rules.test.ts).
 // Tarif TIDAK di-hard-code di perhitungan: semuanya datang dari `PayrollReference`
 // (tabel reference_data, diedit staf di /admin/reference-data). DEFAULT_PAYROLL_REFERENCE di bawah
-// hanya nilai awal untuk migrasi/seed. PERLU DIVERIFIKASI konsultan pajak sebelum dipakai produksi (D20).
+// hanya nilai awal untuk migrasi/seed. Diperiksa terhadap aturan resmi 2026-10-31 — sumber & butir yang
+// masih perlu dicek ke naskah primer ada di tasks/COMPLIANCE_REFERENCE.md (D20, D24).
 //
 // Dasar hukum yang diikuti:
 //  - PPh 21 tarif efektif rata-rata (TER) bulanan: PP 58/2023 + PMK 168/2023 (kategori A/B/C).
@@ -246,6 +247,8 @@ export interface PayslipData {
   taxableGross: number
   pph21: number
   pph21Method: 'ter' | 'final_period'
+  /** gross = PPh 21 dipotong dari gaji; gross_up = perusahaan memberi tunjangan PPh 21 sebesar pajaknya. */
+  taxMethod?: TaxMethod
   terCategory: TerCategory
   terRate: number
   employeePension: number
@@ -255,7 +258,42 @@ export interface PayslipData {
 }
 
 // ---------------------------------------------------------------------------
-// Nilai awal referensi (PERLU VERIFIKASI — D20). Disalin ke reference_data oleh migrasi.
+// Gross-up
+// ---------------------------------------------------------------------------
+
+export const TAX_METHODS = ['gross', 'gross_up'] as const
+export type TaxMethod = (typeof TAX_METHODS)[number]
+export const TAX_METHOD_LABELS: Record<TaxMethod, string> = {
+  gross: 'Gross — PPh 21 dipotong dari gaji',
+  gross_up: 'Gross-up — perusahaan memberi tunjangan PPh 21'
+}
+
+/**
+ * Tunjangan pajak gross-up: cari T sehingga PPh 21 atas (bruto + T) = T. Tunjangan ini ikut menjadi
+ * penghasilan kena pajak (PMK 168/2023), sehingga dicari dengan iterasi titik tetap.
+ * `taxFor(allowance)` = PPh 21 bila tunjangan sebesar itu. Karena tarif TER bertingkat, iterasi bisa
+ * berayun di batas lapisan; maka dipilih T terkecil dalam siklus yang menutup pajaknya (taxFor(T) ≤ T).
+ */
+export function grossUpAllowance(taxFor: (allowance: number) => number, maxIterations = 60): { allowance: number, tax: number } {
+  let allowance = 0
+  const seen: number[] = []
+  for (let i = 0; i < maxIterations; i++) {
+    const tax = Math.max(0, taxFor(allowance))
+    if (tax === allowance) return { allowance, tax }
+    if (seen.includes(tax)) {
+      const cycle = seen.slice(seen.indexOf(tax))
+      const covering = cycle.filter(t => Math.max(0, taxFor(t)) <= t).sort((a, b) => a - b)
+      const chosen = covering[0] ?? Math.max(...cycle)
+      return { allowance: chosen, tax: Math.max(0, taxFor(chosen)) }
+    }
+    seen.push(tax)
+    allowance = tax
+  }
+  return { allowance, tax: Math.max(0, taxFor(allowance)) }
+}
+
+// ---------------------------------------------------------------------------
+// Nilai awal referensi (diperiksa 2026-10-31 — D20, D24). Disalin ke reference_data oleh migrasi.
 // ---------------------------------------------------------------------------
 
 const b = (pairs: Array<[number | null, number]>): RateBracket[] => pairs.map(([upTo, rate]) => ({ upTo, rate }))
@@ -304,8 +342,9 @@ export const DEFAULT_PAYROLL_REFERENCE: PayrollReference = {
     jhtEmployee: 2,
     jpCompany: 2,
     jpEmployee: 1,
-    // Batas upah JP 2025 — diperbarui tiap tahun oleh BPJS Ketenagakerjaan.
-    jpWageCap: 10_547_400,
+    // Batas upah JP mulai 1 Maret 2026 (Rp10.547.400 untuk Mar 2025–Feb 2026) — berubah tiap Maret;
+    // nilai per periode dibaca dari reference_data yang berlaku-tanggal.
+    jpWageCap: 11_086_300,
     jkm: 0.3
   },
   occupationalCostRate: 5,

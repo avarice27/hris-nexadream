@@ -159,6 +159,8 @@ model Tenant {
   subscription       Subscription?
   subscriptionEvents SubscriptionEvent[]
   payments           Payment[]
+  invoices           SubscriptionInvoice[]
+  exportJobs         ExportJob[]
   apiClients         ApiClient[]
   trialClaim         TrialClaim?
   notifications      Notification[]
@@ -482,14 +484,91 @@ model Payment {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  subscription Subscription?        @relation(fields: [subscriptionId], references: [id])
+  invoice      SubscriptionInvoice?
 
   @@index([tenantId])
   @@index([subscriptionId])
   @@index([status])
   @@index([tenantId, createdAt])
   @@map("payments")
+}
+
+/// Invoice + bukti pembayaran langganan (D24). Satu per pembayaran berhasil; snapshot penjual &
+/// pembeli saat terbit, tidak pernah diubah kecuali nomor Faktur Pajak (diterbitkan di Coretax DJP).
+/// Harga sudah termasuk PPN: PPN = tarif × DPP nilai lain (11/12 × DPP), PMK 131/2024.
+model SubscriptionInvoice {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  paymentId          String   @unique
+  /// INV/<tahun>/<urut 6 digit> — urutan global dari sequence "subscription_invoice_seq".
+  number             String   @unique
+  issuedAt           DateTime
+  description        String
+  sellerName         String
+  sellerNpwp         String?
+  sellerAddress      String?
+  sellerIsPkp        Boolean
+  buyerName          String
+  buyerAddress       String?
+  /// NPWP pembeli — ciphertext AES-256-GCM (D7).
+  buyerNpwpEncrypted String?
+  currency           String   @default("IDR")
+  /// Total dibayar (termasuk PPN), rupiah.
+  total              Int
+  /// Dasar Pengenaan Pajak (harga sebelum PPN).
+  taxBase            Int
+  /// DPP nilai lain = 11/12 × DPP.
+  otherTaxBase       Int
+  vatRatePercent     Decimal  @db.Decimal(5, 2)
+  vat                Int
+  /// Bukti pembayaran > Rp5.000.000 terutang bea meterai (UU 10/2020).
+  stampDutyApplies   Boolean  @default(false)
+  /// Nomor Faktur Pajak dari Coretax, diisi staf setelah terbit.
+  taxInvoiceNumber   String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([tenantId, issuedAt])
+  @@map("subscription_invoices")
+}
+
+/// Ekspor besar sebagai pekerjaan latar: diproses per langkah kecil yang dapat dilanjutkan
+/// (klien memanggil /step berulang), hasil CSV disimpan privat di storage.
+model ExportJob {
+  id            String          @id @default(cuid())
+  tenantId      String
+  requestedById String
+  kind          String // employees | attendance | leave | payroll_summary
+  params        Json
+  status        ExportJobStatus @default(queued)
+  /// Kursor lanjutan (id terakhir / offset) + baris CSV sementara disimpan terenkripsi.
+  cursor        String?
+  partialCsv    String?
+  rowCount      Int             @default(0)
+  fileId        String?
+  error         String?
+  completedAt   DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([expiresAt])
+  @@map("export_jobs")
+}
+
+enum ExportJobStatus {
+  queued
+  running
+  completed
+  failed
 }
 
 /// Every raw callback, stored before it is applied. dedupeKey makes provider
@@ -1035,6 +1114,8 @@ model Employee {
   maritalStatus     String? // single | married | divorced | widowed
   /// PTKP: TK0..TK3, K0..K3 (menentukan kategori TER PPh 21).
   ptkpStatus        String           @default("TK0")
+  /// Metode PPh 21: gross (dipotong dari gaji) | gross_up (perusahaan memberi tunjangan pajak sebesar PPh 21).
+  taxMethod         String           @default("gross")
   address           String?
   photoUrl          String?
   joinDate          DateTime         @db.Date

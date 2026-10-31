@@ -18,6 +18,7 @@ export function toPaymentView(payment: Payment) {
     paymentType: payment.paymentType,
     redirectUrl: isAwaitingPayment(payment) ? payment.redirectUrl : null,
     paidAt: payment.paidAt?.toISOString() ?? null,
+    hasInvoice: payment.status === 'paid',
     expiresAt: payment.expiresAt?.toISOString() ?? null,
     createdAt: payment.createdAt.toISOString()
   }

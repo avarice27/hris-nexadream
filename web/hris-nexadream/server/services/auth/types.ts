@@ -15,6 +15,25 @@ export interface AuthProvider {
   authenticate(input: Record<string, unknown>, audience: Audience): Promise<AuthIdentity>
 }
 
+export interface ExternalProfile {
+  provider: string
+  /** id stabil dari penyedia — bukan email */
+  subject: string
+  email: string | null
+  emailVerified: boolean
+  name: string | null
+  avatarUrl: string | null
+}
+
+export interface RedirectAuthProvider {
+  readonly name: string
+  readonly supports: Audience[]
+  /** false → tombol disembunyikan, alur memantul kembali ke halaman login */
+  isConfigured(): boolean
+  authorizationUrl(input: { redirectUri: string, state: string }): string
+  exchange(input: { code: string, redirectUri: string }): Promise<ExternalProfile>
+}
+
 export interface SessionClaims {
   /** id pengguna */
   sub: string

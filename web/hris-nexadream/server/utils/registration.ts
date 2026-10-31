@@ -22,6 +22,15 @@ export const registrationSchema = z.object({
 
 export type RegistrationInput = z.infer<typeof registrationSchema>
 
+/** Pendaftaran lewat penyedia eksternal (Google): tanpa kata sandi & HP — HP diisi di onboarding. */
+export interface ExternalRegistrationInput {
+  name: string
+  email: string
+  emailVerified: true
+  avatarUrl?: string | null
+  timezone?: RegistrationInput['timezone']
+}
+
 export function slugify(value: string): string {
   return value
     .normalize('NFKD')
@@ -55,19 +64,20 @@ export async function allocateBranchCode(db: Prisma.TransactionClient = prisma):
   throw new Error('Could not allocate a unique branch code.')
 }
 
-export async function registerOwner(event: H3Event, input: RegistrationInput): Promise<SignInResult> {
+export async function registerOwner(event: H3Event, input: RegistrationInput | ExternalRegistrationInput): Promise<SignInResult> {
   if (!(await getBooleanSetting('app.registrationOpen'))) {
     throw httpError(503, 'REGISTRATION_CLOSED', 'Pendaftaran sedang ditutup. Silakan coba lagi nanti.')
   }
   await assertSharedRateLimit('register:ip', clientIp(event), 10, 60 * 60 * 1000)
 
   const email = input.email.trim().toLowerCase()
-  const phone = normalizeIndonesianPhone(input.phone)
+  const phone = 'phone' in input ? normalizeIndonesianPhone(input.phone) : null
+  const timezone = input.timezone ?? 'Asia/Jakarta'
 
   if (await prisma.tenantUser.findUnique({ where: { email }, select: { id: true } })) {
     throw conflict('Email ini sudah terdaftar. Silakan masuk atau gunakan email lain.', { field: 'email' })
   }
-  if (await prisma.tenantUser.findUnique({ where: { phone }, select: { id: true } })) {
+  if (phone && await prisma.tenantUser.findUnique({ where: { phone }, select: { id: true } })) {
     throw conflict('Nomor HP ini sudah terdaftar.', { field: 'phone' })
   }
 
@@ -85,12 +95,14 @@ export async function registerOwner(event: H3Event, input: RegistrationInput): P
   const plan = grantTrial ? trialPlan! : freePlan
   const now = new Date()
   const trialEndsAt = grantTrial ? new Date(now.getTime() + plan.trialDays * 86400_000) : null
-  const passwordHash = await hashPassword(input.password)
-  const tenantName = input.companyName?.trim() || input.name.trim()
+  const passwordHash = 'password' in input ? await hashPassword(input.password) : null
+  const tenantName = ('companyName' in input && input.companyName?.trim()) || input.name.trim()
+  const emailVerifiedAt = 'emailVerified' in input ? now : null
+  const avatarUrl = 'avatarUrl' in input ? input.avatarUrl ?? null : null
 
   const { tenant, user } = await prisma.$transaction(async (tx) => {
     const user = await tx.tenantUser.create({
-      data: { name: input.name.trim(), email, phone, passwordHash }
+      data: { name: input.name.trim(), email, phone, passwordHash, emailVerifiedAt, avatarUrl }
     })
     const tenant = await tx.tenant.create({
       data: {
@@ -98,7 +110,7 @@ export async function registerOwner(event: H3Event, input: RegistrationInput): P
         slug: await uniqueTenantSlug(tenantName, undefined, tx),
         email,
         phone,
-        timezone: input.timezone,
+        timezone,
         dataConsentAcceptedAt: now
       }
     })
@@ -125,7 +137,7 @@ export async function registerOwner(event: H3Event, input: RegistrationInput): P
         tenantId: tenant.id,
         name: 'Kantor Pusat',
         code: await allocateBranchCode(tx),
-        timezone: input.timezone,
+        timezone,
         isPrimary: true
       }
     })
@@ -167,7 +179,7 @@ export async function registerOwner(event: H3Event, input: RegistrationInput): P
     tenantId: tenant.id,
     targetType: 'tenant',
     targetId: tenant.id,
-    metadata: { planSlug: plan.slug, trial: grantTrial }
+    metadata: { planSlug: plan.slug, trial: grantTrial, method: passwordHash ? 'password' : 'external' }
   })
 
   return startSession(user.id, 'tenant', tenant.id, true)

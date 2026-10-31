@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  DEFAULT_PAYROLL_REFERENCE as ref, bpjsContributions, finalPeriodTax, fullMonthsBetween, maxOvertimeMinutes,
+  DEFAULT_PAYROLL_REFERENCE as ref, bpjsContributions, finalPeriodTax, fullMonthsBetween, grossUpAllowance, maxOvertimeMinutes,
   monthlyTerTax, overtimeMultiplierHours, overtimePay, progressiveTax, ptkpAmount, terCategory, thrAmount
 } from '../shared/utils/payroll-rules'
 
@@ -54,8 +54,8 @@ test('BPJS contributions respect wage caps and enrolment flags', () => {
   const capped = bpjsContributions({ wage: 15_000_000, ...full }, ref.bpjs)
   assert.equal(capped.kesehatanCompany, 480_000)
   assert.equal(capped.kesehatanEmployee, 120_000)
-  assert.equal(capped.jpCompany, 210_948)
-  assert.equal(capped.jpEmployee, 105_474)
+  assert.equal(capped.jpCompany, 221_726) // batas upah JP Rp11.086.300 (Mar 2026)
+  assert.equal(capped.jpEmployee, 110_863)
   assert.equal(capped.jhtEmployee, 300_000)
   const none = bpjsContributions({ wage: 10_000_000, kesehatanEnrolled: false, ketenagakerjaanEnrolled: false, pensionEnrolled: true, jkkRate: 0.24 }, ref.bpjs)
   assert.ok(Object.values(none).every(v => v === 0))
@@ -77,4 +77,23 @@ test('THR proration by full months of service', () => {
   assert.deepEqual(thrAmount(6_000_000, '2025-03-15', '2026-03-15'), { months: 12, amount: 6_000_000 })
   assert.deepEqual(thrAmount(6_000_000, '2025-09-01', '2026-03-01'), { months: 6, amount: 3_000_000 })
   assert.deepEqual(thrAmount(6_000_000, '2026-02-20', '2026-03-10'), { months: 0, amount: 0 })
+})
+
+test('gross-up allowance equals the PPh 21 it causes (TER fixed point)', () => {
+  // K/0, bruto Rp10.000.000 → kategori A. Tunjangan T harus = TER(10 jt + T) × (10 jt + T).
+  const { allowance, tax } = grossUpAllowance(t => monthlyTerTax(10_000_000 + t, 'K0', ref).tax)
+  assert.equal(tax, monthlyTerTax(10_000_000 + allowance, 'K0', ref).tax)
+  assert.ok(tax <= allowance)
+  assert.ok(allowance > monthlyTerTax(10_000_000, 'K0', ref).tax)
+})
+
+test('gross-up of a non-taxable wage stays zero', () => {
+  assert.deepEqual(grossUpAllowance(t => monthlyTerTax(4_000_000 + t, 'TK0', ref).tax), { allowance: 0, tax: 0 })
+})
+
+test('gross-up resolves oscillation at a TER band edge with a covering allowance', () => {
+  for (let gross = 5_300_000; gross <= 5_700_000; gross += 7_919) {
+    const { allowance, tax } = grossUpAllowance(t => monthlyTerTax(gross + t, 'TK0', ref).tax)
+    assert.ok(tax <= allowance, `gross ${gross}: tax ${tax} > allowance ${allowance}`)
+  }
 })

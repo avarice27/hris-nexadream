@@ -17,5 +17,7 @@ export default defineEventHandler(event => runThrottled(event, 'hr', async () =>
   broadcasts: await step('broadcasts', () => dispatchDueBroadcasts()),
   retention: await step('retention', () => purgeDeletedTenants()),
   formerEmployees: await step('formerEmployees', () => anonymizeFormerEmployees()),
-  rateLimits: await step('rateLimits', () => pruneRateLimitBuckets())
+  rateLimits: await step('rateLimits', () => pruneRateLimitBuckets()),
+  authHandoffs: await step('authHandoffs', () => pruneAuthHandoffs()),
+  exports: await step('exports', () => processExportJobs())
 })))

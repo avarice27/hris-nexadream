@@ -9,27 +9,29 @@ const isTestEnvironment = useRuntimeConfig().public.appEnv !== 'production'
 <template>
   <UDashboardPanel :id="id ?? title">
     <template #header>
-      <template v-if="audience === 'tenant'">
-        <ImpersonationBanner />
-        <TrialBanner />
-      </template>
-      <AdminImpersonationBanner v-else />
-      <UDashboardNavbar :title="title">
-        <template #leading>
-          <UDashboardSidebarCollapse />
+      <div class="contents print:hidden">
+        <template v-if="audience === 'tenant'">
+          <ImpersonationBanner />
+          <TrialBanner />
         </template>
-        <template #right>
-          <UBadge
-            v-if="audience === 'platform' && isTestEnvironment"
-            label="Test environment"
-            color="warning"
-            variant="subtle"
-            class="hidden sm:inline-flex"
-          />
-          <slot name="actions" />
-          <NotificationMenu :audience="audience" />
-        </template>
-      </UDashboardNavbar>
+        <AdminImpersonationBanner v-else />
+        <UDashboardNavbar :title="title">
+          <template #leading>
+            <UDashboardSidebarCollapse />
+          </template>
+          <template #right>
+            <UBadge
+              v-if="audience === 'platform' && isTestEnvironment"
+              label="Test environment"
+              color="warning"
+              variant="subtle"
+              class="hidden sm:inline-flex"
+            />
+            <slot name="actions" />
+            <NotificationMenu :audience="audience" />
+          </template>
+        </UDashboardNavbar>
+      </div>
     </template>
 
     <template #body>

@@ -12,16 +12,17 @@ domain layer (`saas-blueprint/18-domain-layer-guide.md`).
 | 0 | Decisions & docs adaptation | in progress (owner inputs D6 scope + brand assets) |
 | 1 | Skeleton | done |
 | 2 | Schema & seed | done (verified on in-memory Postgres; not yet on a real DB) |
-| 3 | Auth & RBAC | done (Google OAuth deferred) |
+| 3 | Auth & RBAC | done (Google sign-in built; needs client id/secret) |
 | 4 | Settings, email, notifications | done (push/FCM deferred; SMTP not yet configured) |
 | 5 | Tenancy (company, branches, team) | done |
 | 6 | Plans & entitlements | done |
 | 7 | Billing & payments | done (real-hub test pending credentials) |
 | 8 | Back-office completion | done (push/FCM & usage analytics deferred) |
-| 9 | Public site | done (legal copy needs lawyer review) |
+| 9 | Public site | done (legal copy finalised per Indonesian law — lawyer review recommended) |
 | 10 | Public API (`/api/v1`) | done |
-| 11 | HRIS domain modules | done (statutory rates need tax-consultant verification) |
+| 11 | HRIS domain modules | done (rates checked vs official rules 2026-10-31 — see COMPLIANCE_REFERENCE) |
 | 12 | Production readiness | code done — remaining items need owner credentials/ops |
+| 13 | Official-rule pass & platform additions | done (3 follow-ups listed) |
 
 ## Phase 0 — Decisions & docs
 
@@ -187,8 +188,27 @@ export).
 - [x] DB pool capped per instance (`DB_POOL_MAX`, default 5)
 - [ ] OWNER/OPS: set `JWT_SECRET`, `SETTINGS_SECRET`, `HR_DATA_KEY` (≥ 32 chars, distinct), pooled Neon URL, separate DB per env
 - [ ] OWNER/OPS: superadmin password changed; SMTP tested; Payment Hub production key + `HRN` prefix + webhook registered
-- [ ] OWNER/OPS: storage buckets (public + PRIVATE) and CORS; run `prisma migrate deploy` + seed on the real DB
-- [ ] OWNER: tax consultant verifies `/admin/reference-data` payroll rates; lawyer reviews privacy/terms/payment policy; fill 2026 religious holidays
+- [ ] OWNER/OPS: create two Vercel Blob stores (Public + Private) and set `BLOB_PUBLIC_READ_WRITE_TOKEN` / `BLOB_PRIVATE_READ_WRITE_TOKEN`; run `prisma migrate deploy` + seed on the real DB
+- [x] Payroll rates checked against official rules (TER PP 58/2023, Pasal 17, PTKP, BPJS; JP cap Rp11.086.300 from Mar 2026) — `tasks/COMPLIANCE_REFERENCE.md`
+- [x] 2026 + 2027 national holidays and cuti bersama (SKB) in reference data
+- [x] Privacy, terms and payment policy finalised per UU PDP, UU 8/1999, UU 24/2009, UU KUP (D24)
+- [ ] OWNER: confirm the [verify] items in `tasks/COMPLIANCE_REFERENCE.md` against the primary PDFs; optional lawyer review of the legal pages
+- [ ] OWNER: set `company.legalName`, `company.address`, `billing.sellerNpwp` and confirm PKP status (`billing.pkpRegistered`)
+- [ ] OWNER: create the Google OAuth client (redirect `${SITE_URL}/api/app/auth/oauth/google/callback`) and set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+
+## Phase 13 — Official-rule pass & platform additions (D24)
+
+- [x] Vercel Blob storage driver (public + private stores, presigned private reads) as the default
+- [x] Google sign-in (OAuth + handoff code), inert until configured; login/register buttons; callback page
+- [x] Official Nexadream logo, favicon and email logo
+- [x] Subscription invoices & receipts with PPN (DPP nilai lain 11/12), printable for owners and staff; Faktur Pajak number field
+- [x] Payroll gross-up method per employee (tax allowance, also in the final period)
+- [x] Attendance selfie viewer for HR/managers (signed URLs, audited)
+- [x] Large exports as background jobs (resumable steps, private CSV, 24 h)
+- [x] API v1: overtime, reimbursements, holidays, attendance calendars, documents, reports, performance (+ `sensitive` scope enforced on personal-data reads)
+- [ ] Cuti bersama deducted from annual leave as a tenant option (SKB allows it for private employers)
+- [ ] PPh 21 DTP (PMK 105/2025) for eligible sectors (KLU flag per tenant, eligibility fixed in January)
+- [ ] e-Meterai integration for receipts > Rp5.000.000 (Peruri distributor) — on request for now
 - [ ] Mark changelog Released at deploy
 
 ## Out of scope (do not half-build)

@@ -19,7 +19,7 @@ export default defineNuxtConfig({
     hrDataKey: process.env.HR_DATA_KEY || '',
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    storageProvider: process.env.STORAGE_PROVIDER || 'supabase',
+    storageProvider: process.env.STORAGE_PROVIDER || 'vercel_blob',
     public: {
       appName: 'HRIS Nexadream',
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',

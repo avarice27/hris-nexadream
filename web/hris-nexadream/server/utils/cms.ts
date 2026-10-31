@@ -105,6 +105,7 @@ function escapeHtml(value: string): string {
  */
 export const PAGE_TOKENS: Record<string, () => Promise<string>> = {
   COMPANY_NAME: () => getSetting('company.name'),
+  LEGAL_NAME: async () => (await getSetting('company.legalName')).trim() || 'Nexadream',
   SUPPORT_EMAIL: () => getSetting('company.email'),
   PRIVACY_CONTACT: () => getSetting('privacy.dataProtectionOfficer'),
   DELETE_SLA_DAYS: async () => String(await getNumberSetting('privacy.deleteRequestSlaDays')),

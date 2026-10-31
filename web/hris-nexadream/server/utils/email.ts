@@ -71,7 +71,7 @@ export async function emailBrand(): Promise<EmailBrand> {
     siteUrl: await siteUrl(),
     supportEmail: await getSetting('company.email'),
     companyName: (await getSetting('company.legalName')) || 'Nexadream',
-    logoUrl: (await getSetting('company.logoUrl')) || null
+    logoUrl: (await getSetting('company.logoUrl')) || `${await siteUrl()}/images/nexadream-logo.png`
   }
 }
 

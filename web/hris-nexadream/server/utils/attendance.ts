@@ -53,7 +53,7 @@ function toRecordView(r: AttendanceRecord, tz: string) {
     workedMinutes: r.workedMinutes,
     source: r.source,
     clockInDistanceMeters: r.clockInDistanceMeters,
-    hasPhoto: !!r.clockInPhotoFileId,
+    hasPhoto: !!(r.clockInPhotoFileId || r.clockOutPhotoFileId),
     note: r.note,
     autoClosed: !!r.autoClosedAt,
     corrected: !!r.correctedAt
@@ -514,4 +514,31 @@ export async function autoCloseOpenAttendance(now = new Date()) {
     closed += updated.count
   }
   return { checked: open.length, closed }
+}
+
+export const attendancePhotoQuerySchema = z.object({ date: dateKeySchema })
+
+/**
+ * Foto selfie absen satu karyawan pada satu tanggal, sebagai signed URL privat (≤ 5 menit).
+ * Biometrik/foto wajah = data pribadi: hanya untuk peran yang boleh membaca absensi karyawan itu,
+ * diblokir saat impersonasi tanpa izin, dan setiap pembukaan dicatat (auditSensitiveRead).
+ */
+export async function attendancePhotos(event: H3Event, employeeId: string, query: z.infer<typeof attendancePhotoQuerySchema>) {
+  const { ctx, employee } = await requireEmployeeAccess(event, 'attendance.read', employeeId)
+  const record = await prisma.attendanceRecord.findFirst({
+    where: { tenantId: ctx.tenantId, employeeId: employee.id, workDate: dateKeyToDb(query.date) },
+    select: { clockInPhotoFileId: true, clockOutPhotoFileId: true, clockInAt: true, clockOutAt: true }
+  })
+  if (!record || (!record.clockInPhotoFileId && !record.clockOutPhotoFileId)) throw notFound('Tidak ada foto absen pada tanggal ini.')
+  await auditSensitiveRead(event, ctx, { employeeId: employee.id, fieldGroup: 'attendance_photo' })
+  const branch = await employeeBranch(employee)
+  const photo = async (fileId: string | null, at: Date | null) => fileId
+    ? { ...(await signedFileUrl(ctx.tenantId, fileId)), time: at ? zonedTimeLabel(at, branch.timezone) : null }
+    : null
+  return {
+    employee: { id: employee.id, fullName: employee.fullName, employeeNumber: employee.employeeNumber },
+    date: query.date,
+    clockIn: await photo(record.clockInPhotoFileId, record.clockInAt),
+    clockOut: await photo(record.clockOutPhotoFileId, record.clockOutAt)
+  }
 }

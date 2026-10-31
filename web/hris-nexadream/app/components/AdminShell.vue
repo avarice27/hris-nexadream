@@ -76,7 +76,7 @@ const userItems = computed<DropdownMenuItem[][]>(() => [
       v-model:open="open"
       collapsible
       resizable
-      class="bg-elevated/25"
+      class="bg-elevated/25 print:hidden"
     >
       <template #header="{ collapsed }">
         <NuxtLink

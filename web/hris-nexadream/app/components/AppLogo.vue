@@ -1,15 +1,17 @@
 <script setup lang="ts">
+// Logo resmi Nexadream (public/images/nexadream-logo.png, dari nexadream.id).
 withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 </script>
 
 <template>
   <span class="inline-flex items-center gap-2 font-semibold text-highlighted">
-    <span class="inline-flex size-8 items-center justify-center rounded-lg bg-primary text-inverted">
-      <UIcon
-        name="i-lucide-users-round"
-        class="size-5"
-      />
-    </span>
+    <img
+      src="/images/nexadream-logo.png"
+      alt="Nexadream"
+      width="32"
+      height="32"
+      class="size-8 shrink-0 object-contain"
+    >
     <span
       v-if="!compact"
       class="truncate"

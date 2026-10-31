@@ -14,7 +14,20 @@ const schema = z.object({
 })
 const state = reactive({ identifier: '', password: '' })
 const loading = ref(false)
-const errorMessage = ref('')
+
+// Kode galat dari alur Google (server/utils/oauth.ts).
+const OAUTH_ERRORS: Record<string, string> = {
+  unavailable: 'Masuk dengan Google belum tersedia. Silakan masuk dengan email dan kata sandi.',
+  cancelled: 'Masuk dengan Google dibatalkan.',
+  state: 'Sesi masuk kedaluwarsa. Silakan coba lagi.',
+  no_email: 'Akun Google Anda tidak membagikan alamat email.',
+  unverified: 'Email akun Google Anda belum terverifikasi.',
+  inactive: 'Akun Anda dinonaktifkan. Hubungi pemilik atau Admin HR perusahaan Anda.',
+  registration_closed: 'Pendaftaran sedang ditutup. Silakan coba lagi nanti.',
+  failed: 'Masuk dengan Google gagal. Silakan coba lagi.'
+}
+const errorMessage = ref(typeof route.query.error === 'string' ? OAUTH_ERRORS[route.query.error] ?? '' : '')
+const redirectTarget = computed(() => typeof route.query.redirect === 'string' ? route.query.redirect : undefined)
 
 async function onSubmit() {
   loading.value = true
@@ -47,6 +60,11 @@ async function onSubmit() {
       variant="subtle"
       icon="i-lucide-circle-alert"
       :title="errorMessage"
+    />
+
+    <OAuthButtons
+      mode="login"
+      :redirect="redirectTarget"
     />
 
     <UForm

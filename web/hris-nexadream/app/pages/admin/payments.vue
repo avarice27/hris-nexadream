@@ -157,6 +157,13 @@ const statusItems = [{ label: 'Semua status', value: ALL }, ...PAYMENT_STATUSES.
               </td>
               <td class="px-3 py-2 text-xs text-muted">
                 {{ formatDateTimeId(p.paidAt ?? p.createdAt, auth.displayTimezone.value) }}
+                <ULink
+                  v-if="p.status === 'paid'"
+                  :to="`/admin/invoices/${p.id}`"
+                  class="block text-primary"
+                >
+                  Invoice
+                </ULink>
               </td>
             </tr>
           </tbody>

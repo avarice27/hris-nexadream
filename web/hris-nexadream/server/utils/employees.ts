@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { z } from 'zod'
 import { EMPLOYMENT_STATUSES, EMPLOYMENT_TYPES, GENDERS, MARITAL_STATUSES, RELIGIONS, isValidNik } from '#shared/utils/hr'
 import { isValidNpwp, digitsOnly } from '#shared/utils/identifiers'
-import { PTKP_STATUSES } from '#shared/utils/payroll-rules'
+import { PTKP_STATUSES, TAX_METHODS } from '#shared/utils/payroll-rules'
 import { dateKeyToDb, dbDateToKey, todayKey } from '#shared/utils/timezone'
 import { formatDateId } from '#shared/utils/format'
 import { isValidIndonesianPhone, normalizeIndonesianPhone } from '#shared/utils/phone'
@@ -34,6 +34,7 @@ const profileFields = {
   religion: z.enum(RELIGIONS).nullable().optional(),
   maritalStatus: z.enum(MARITAL_STATUSES).nullable().optional(),
   ptkpStatus: z.enum(PTKP_STATUSES).optional(),
+  taxMethod: z.enum(TAX_METHODS).optional(),
   address: optionalText(500),
   probationEndDate: optionalDate,
   contractEndDate: optionalDate,
@@ -206,6 +207,7 @@ export async function getEmployee(event: H3Event, id: string) {
     religion: full.religion,
     maritalStatus: full.maritalStatus,
     ptkpStatus: full.ptkpStatus,
+    taxMethod: full.taxMethod,
     address: full.address,
     probationEndDate: keyOrNull(full.probationEndDate),
     endDate: keyOrNull(full.endDate),
@@ -278,6 +280,7 @@ function profileData(input: z.infer<typeof employeeUpdateSchema>) {
     religion: input.religion,
     maritalStatus: input.maritalStatus,
     ptkpStatus: input.ptkpStatus,
+    taxMethod: input.taxMethod,
     address: text(input.address),
     probationEndDate: date(input.probationEndDate),
     contractEndDate: date(input.contractEndDate),

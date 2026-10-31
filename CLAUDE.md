@@ -38,7 +38,7 @@ Every implementation must work under that model:
 - **In-memory state is per instance and best-effort only** (caches, rate limits,
   throttles). Never rely on it for correctness; durable state goes in the database.
 - **No writes to the local filesystem** in production (read-only except `/tmp`).
-  Uploads go through the storage adapter (Supabase / S3). Employee documents are
+  Uploads go through the storage adapter (Vercel Blob by default; Supabase / S3 drivers kept). Employee documents are
   **private** objects served through short-lived signed URLs.
 - **Scheduled jobs = Vercel Cron** declared in `web/hris-nexadream/vercel.json`, hitting
   plain public `GET /api/cron/*` endpoints (no auth, throttled, idempotent).

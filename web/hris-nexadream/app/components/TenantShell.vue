@@ -50,7 +50,7 @@ const navItems = computed<NavigationMenuItem[]>(() => TENANT_NAV
       v-model:open="open"
       collapsible
       resizable
-      class="bg-elevated/25"
+      class="bg-elevated/25 print:hidden"
       :ui="{ footer: 'lg:border-t lg:border-default' }"
     >
       <template #header="{ collapsed }">
